@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 560" role="img" aria-labelledby="title desc">
+  <title id="title">vibe-rescue-kit by deepelynx</title>
+  <desc id="desc">Automatic, verified fixes for the failures AI vibe-coding tools leave behind.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0c0f13"/>
+      <stop offset="0.55" stop-color="#0f1216"/>
+      <stop offset="1" stop-color="#1a140f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.86" cy="0.08" r="0.7">
+      <stop offset="0" stop-color="#ff6b3d" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#ff6b3d" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#ffffff" stroke-opacity="0.035"/>
+    </pattern>
+  </defs>
+  <rect width="1280" height="560" fill="url(#bg)"/>
+  <rect width="1280" height="560" fill="url(#glow)"/>
+  <rect width="1280" height="560" fill="url(#grid)"/>
+  <rect x="72" y="58" width="12" height="34" rx="6" fill="#ff6b3d"/><rect x="94" y="58" width="12" height="34" rx="6" fill="#ff6b3d"/>
+  <text x="148" y="84" fill="#eef1f5" font-family="ui-sans-serif, system-ui, sans-serif" font-size="28" font-weight="650">deepelynx</text>
+  <text x="292" y="84" fill="#9aa4b1" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22">/ vibe-rescue-kit</text>
+  <text x="72" y="210" fill="#eef1f5" font-family="ui-sans-serif, system-ui, sans-serif" font-size="76" font-weight="720">Rescue the vibe.</text>
+  <text x="72" y="268" fill="#9aa4b1" font-family="ui-sans-serif, system-ui, sans-serif" font-size="26">Detect the failure. Apply the fix. Keep it only if verification passes.</text>
+  <g font-family="ui-sans-serif, system-ui, sans-serif" font-size="16" font-weight="650">
+    <rect x="72" y="312" width="168" height="40" rx="20" fill="#191e25" stroke="#2b323c"/>
+    <text x="96" y="338" fill="#ff6b3d">01  detect</text>
+    <rect x="252" y="312" width="140" height="40" rx="20" fill="#191e25" stroke="#2b323c"/>
+    <text x="276" y="338" fill="#eef1f5">02  fix</text>
+    <rect x="404" y="312" width="168" height="40" rx="20" fill="#191e25" stroke="#2b323c"/>
+    <text x="428" y="338" fill="#3ddc9a">03  verify</text>
+    <rect x="584" y="312" width="196" height="40" rx="20" fill="#191e25" stroke="#2b323c"/>
+    <text x="608" y="338" fill="#eef1f5">04  keep or roll back</text>
+  </g>
+  <text x="72" y="500" fill="#9aa4b1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16">npx vibe-rescue scan   ·   npx vibe-rescue fix --yes</text>
+  <text x="72" y="528" fill="#ff6b3d" font-family="ui-sans-serif, system-ui, sans-serif" font-size="15" font-weight="650">built by deepelynx  ·  deepelynx.com</text>
+  <g>
+    <rect x="860" y="150" width="360" height="280" rx="18" fill="#191e25" stroke="#2b323c"/>
+    <rect x="860" y="150" width="360" height="42" rx="18" fill="#20262e"/>
+    <rect x="860" y="176" width="360" height="16" fill="#20262e"/>
+    <circle cx="886" cy="171" r="5" fill="#ff6b3d"/>
+    <circle cx="904" cy="171" r="5" fill="#e2b340"/>
+    <circle cx="922" cy="171" r="5" fill="#3ddc9a"/>
+    <text x="884" y="230" fill="#9aa4b1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">vibe-rescue fix</text>
+    <text x="884" y="262" fill="#3ddc9a" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">leaked-secrets  fixed</text>
+    <text x="884" y="288" fill="#3ddc9a" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">supabase-rls  fixed</text>
+    <text x="884" y="314" fill="#3ddc9a" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">spa-rewrites  fixed</text>
+    <text x="884" y="348" fill="#eef1f5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">7 rules changed files</text>
+    <text x="884" y="372" fill="#eef1f5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">0 rolled back</text>
+    <text x="884" y="404" fill="#9aa4b1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12">vibe-rescue-kit by deepelynx</text>
+  </g>
+</svg>

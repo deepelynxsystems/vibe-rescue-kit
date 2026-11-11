@@ -1,0 +1,53 @@
+name: vibe-rescue
+description: Detect and safely auto-fix common AI vibe-coding failures
+author: deepelynx
+branding:
+  icon: shield
+  color: orange
+inputs:
+  mode:
+    description: scan fails when problems exist. fix applies verified fixes.
+    required: false
+    default: scan
+  rule:
+    description: Limit the run to one rule id.
+    required: false
+    default: ""
+  working-directory:
+    description: Project directory, relative to the repository root.
+    required: false
+    default: "."
+runs:
+  using: composite
+  steps:
+    - name: Prepare vibe-rescue-kit
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        if [ ! -f "$ACTION_PATH/dist/cli.js" ]; then
+          npm --prefix "$ACTION_PATH" ci
+          npm --prefix "$ACTION_PATH" run build
+        fi
+    - name: Run vibe-rescue
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        MODE: ${{ inputs.mode }}
+        RULE: ${{ inputs.rule }}
+      run: |
+        set -euo pipefail
+        case "$MODE" in
+          scan|fix|watch) ;;
+          *) echo "mode must be scan, fix, or watch" >&2; exit 2 ;;
+        esac
+        args=("$MODE")
+        if [ "$MODE" = "fix" ] || [ "$MODE" = "watch" ]; then
+          args+=("--yes")
+        fi
+        if [ -n "$RULE" ]; then
+          args+=("--rule" "$RULE")
+        fi
+        node "$ACTION_PATH/dist/cli.js" "${args[@]}"

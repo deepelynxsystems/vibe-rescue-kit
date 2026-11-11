@@ -1,0 +1,6 @@
+id: import-paths
+title: Broken imports and missing dependencies
+description: Fix import specifiers whose path casing does not match the file, and add imported packages that are missing from package.json.
+severity: error
+scopeNote: Does not run npm install. Added dependencies use * so the package manager can resolve a version.
+strategy: import-paths

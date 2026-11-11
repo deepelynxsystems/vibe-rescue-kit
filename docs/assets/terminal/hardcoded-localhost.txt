@@ -1,0 +1,52 @@
+$ vibe-rescue scan hardcoded-localhost
+vibe-rescue scan
+/tmp/tmp.KLBFEwVfle
+
+hardcoded-localhost  found
+  ✗  src/api.ts:1
+     Hardcoded http://localhost:3000 in src/api.ts.
+     Use import.meta.env.VITE_API_BASE_URL. VITE_API_BASE_URL will be added to .env.example.
+  ✗  src/api.ts:4
+     Hardcoded http://127.0.0.1:3000 in src/api.ts.
+     Use import.meta.env.VITE_API_BASE_URL. VITE_API_BASE_URL will be added to .env.example.
+  ✗  src/api.ts:7
+     Hardcoded http://localhost:54321 in src/api.ts.
+     Use import.meta.env.VITE_SUPABASE_URL. VITE_SUPABASE_URL will be added to .env.example.
+
+3 findings · 3 errors · 0 warnings
+
+vibe-rescue-kit by deepelynx
+
+$ vibe-rescue fix --yes hardcoded-localhost
+vibe-rescue fix
+/tmp/tmp.KLBFEwVfle
+
+hardcoded-localhost  fixed
+  ✗  src/api.ts:1
+     Hardcoded http://localhost:3000 in src/api.ts.
+     Use import.meta.env.VITE_API_BASE_URL. VITE_API_BASE_URL will be added to .env.example.
+  ✗  src/api.ts:4
+     Hardcoded http://127.0.0.1:3000 in src/api.ts.
+     Use import.meta.env.VITE_API_BASE_URL. VITE_API_BASE_URL will be added to .env.example.
+  ✗  src/api.ts:7
+     Hardcoded http://localhost:54321 in src/api.ts.
+     Use import.meta.env.VITE_SUPABASE_URL. VITE_SUPABASE_URL will be added to .env.example.
+  updated src/api.ts
+  created .env.example
+  created .env
+  note: Localhost origins were copied into .env as the local default. Change them per environment.
+  Verification passed.
+
+1 rule changed files · 0 rolled back · 3 files
+Backups: .vibe-rescue/backups/20261111T204445Z (gitignored, may contain secrets).
+
+vibe-rescue-kit by deepelynx
+
+$ vibe-rescue scan hardcoded-localhost
+vibe-rescue scan
+/tmp/tmp.KLBFEwVfle
+
+No problems found.
+0 findings · 0 errors · 0 warnings
+
+vibe-rescue-kit by deepelynx

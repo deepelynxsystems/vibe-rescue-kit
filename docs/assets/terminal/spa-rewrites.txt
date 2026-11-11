@@ -1,0 +1,52 @@
+$ vibe-rescue scan spa-rewrites
+vibe-rescue scan
+/tmp/tmp.cZ5FOoTu1l
+
+spa-rewrites  found
+  ✗  vercel.json
+     vercel.json has no SPA rewrite to /index.html.
+     A rewrite to /index.html will be added. Nothing is deployed.
+  ✗  netlify.toml
+     Netlify redirect from /* to /index.html (200) is missing.
+     A rewrite to /index.html will be added. Nothing is deployed.
+  ✗  public/_redirects
+     Static host _redirects rule /* /index.html 200 is missing.
+     A rewrite to /index.html will be added. Nothing is deployed.
+
+3 findings · 3 errors · 0 warnings
+
+vibe-rescue-kit by deepelynx
+
+$ vibe-rescue fix --yes spa-rewrites
+vibe-rescue fix
+/tmp/tmp.cZ5FOoTu1l
+
+spa-rewrites  fixed
+  ✗  vercel.json
+     vercel.json has no SPA rewrite to /index.html.
+     A rewrite to /index.html will be added. Nothing is deployed.
+  ✗  netlify.toml
+     Netlify redirect from /* to /index.html (200) is missing.
+     A rewrite to /index.html will be added. Nothing is deployed.
+  ✗  public/_redirects
+     Static host _redirects rule /* /index.html 200 is missing.
+     A rewrite to /index.html will be added. Nothing is deployed.
+  updated vercel.json
+  created netlify.toml
+  created public/_redirects
+  note: Host rewrites send unknown paths to index.html with status 200. API routes are left alone when an api/ directory exists.
+  Verification passed.
+
+1 rule changed files · 0 rolled back · 3 files
+Backups: .vibe-rescue/backups/20261111T204445Z (gitignored, may contain secrets).
+
+vibe-rescue-kit by deepelynx
+
+$ vibe-rescue scan spa-rewrites
+vibe-rescue scan
+/tmp/tmp.cZ5FOoTu1l
+
+No problems found.
+0 findings · 0 errors · 0 warnings
+
+vibe-rescue-kit by deepelynx

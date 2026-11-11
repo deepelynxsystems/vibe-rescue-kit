@@ -1,0 +1,5 @@
+{
+  "name": "webhook-fixture",
+  "private": true,
+  "dependencies": { "stripe": "^17.4.0" }
+}

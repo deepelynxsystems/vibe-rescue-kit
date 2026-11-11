@@ -1,0 +1,7 @@
+{
+  "name": "localhost-fixture",
+  "private": true,
+  "type": "module",
+  "dependencies": { "react": "^18.3.1" },
+  "devDependencies": { "vite": "^6.0.0" }
+}

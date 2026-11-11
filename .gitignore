@@ -1,0 +1,18 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+.vibe-rescue/backups/
+
+# Local secrets for people working on the kit itself.
+# Fixture and example projects commit .env on purpose — those files are the bug.
+.env
+.env.*
+!.env.example
+!fixtures/**/.env
+!fixtures/**/.env.*
+!examples/**/.env
+!examples/**/.env.*
+!fixtures/**/.env.example
+!examples/**/.env.example

@@ -1,0 +1,6 @@
+id: missing-env
+title: Missing environment variables
+description: Env vars referenced in code need a documented name and a startup check that fails clearly when they are unset.
+severity: error
+scopeNote: Does not invent secret values. Empty keys are written so the startup check keeps failing until you fill them in.
+strategy: missing-env

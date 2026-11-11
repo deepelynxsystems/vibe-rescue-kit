@@ -1,0 +1,6 @@
+id: supabase-rls
+title: Supabase tables without row level security
+description: Tables created in migrations need RLS enabled and a policy before a client can safely touch them.
+severity: error
+scopeNote: Writes a SQL migration only. It never connects to Postgres or Supabase.
+strategy: supabase-rls
