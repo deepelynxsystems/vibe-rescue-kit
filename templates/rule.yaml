@@ -1,0 +1,15 @@
+id: RULE_ID
+title: RULE_TITLE
+description: Describe the problem this rule solves. The engine treats detect as the problem definition.
+severity: warning
+detect:
+  globs:
+    - "src/**/*.{ts,tsx,js,jsx}"
+  pattern: "vibe-rescue-template-pattern"
+  message: "Template pattern is still present in $file:$line."
+fix:
+  type: replace
+  pattern: "vibe-rescue-template-pattern"
+  replacement: "vibe-rescue-template-fixed"
+verify:
+  type: rescan

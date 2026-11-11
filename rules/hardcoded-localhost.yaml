@@ -1,0 +1,6 @@
+id: hardcoded-localhost
+title: Hardcoded localhost URLs
+description: Client code should read its API origin from the environment so preview, staging, and production do not keep calling localhost.
+severity: error
+scopeNote: Rewrites client source only. Server files may keep a local URL. Port 54321 is treated as the local Supabase URL.
+strategy: hardcoded-localhost

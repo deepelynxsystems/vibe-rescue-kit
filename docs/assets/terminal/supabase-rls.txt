@@ -1,0 +1,57 @@
+$ vibe-rescue scan supabase-rls
+vibe-rescue scan
+/tmp/tmp.kTPSP0iVM4
+
+supabase-rls  found
+  ✗  supabase/migrations/20240101000000_init.sql
+     Table public.notes is created without ENABLE ROW LEVEL SECURITY.
+     A new migration will enable RLS and add a deny-all policy for anon and authenticated. No database is contacted.
+  ✗  supabase/migrations/20240101000000_init.sql
+     Table public."Notes" is created without ENABLE ROW LEVEL SECURITY.
+     A new migration will enable RLS and add a deny-all policy for anon and authenticated. No database is contacted.
+  ✗  supabase/migrations/20240101000000_init.sql
+     Table public.audit_log has row level security enabled and no policy.
+     A new migration will enable RLS and add a deny-all policy for anon and authenticated. No database is contacted.
+  ✗  supabase/migrations/20240101000000_init.sql
+     Table public.legacy_flags disables row level security.
+     A new migration will enable RLS and add a deny-all policy for anon and authenticated. No database is contacted.
+
+4 findings · 4 errors · 0 warnings
+
+vibe-rescue-kit by deepelynx
+
+$ vibe-rescue fix --yes supabase-rls
+vibe-rescue fix
+/tmp/tmp.kTPSP0iVM4
+
+supabase-rls  fixed
+  ✗  supabase/migrations/20240101000000_init.sql
+     Table public.notes is created without ENABLE ROW LEVEL SECURITY.
+     A new migration will enable RLS and add a deny-all policy for anon and authenticated. No database is contacted.
+  ✗  supabase/migrations/20240101000000_init.sql
+     Table public."Notes" is created without ENABLE ROW LEVEL SECURITY.
+     A new migration will enable RLS and add a deny-all policy for anon and authenticated. No database is contacted.
+  ✗  supabase/migrations/20240101000000_init.sql
+     Table public.audit_log has row level security enabled and no policy.
+     A new migration will enable RLS and add a deny-all policy for anon and authenticated. No database is contacted.
+  ✗  supabase/migrations/20240101000000_init.sql
+     Table public.legacy_flags disables row level security.
+     A new migration will enable RLS and add a deny-all policy for anon and authenticated. No database is contacted.
+  created supabase/migrations/20261111204444_vibe_rescue_enable_rls.sql
+  note: Review the new migration before you apply it. vibe-rescue does not connect to a database.
+  note: The deny-all policy blocks anon and authenticated until you replace it with a real policy. The service role bypasses RLS.
+  Verification passed.
+
+1 rule changed files · 0 rolled back · 1 file
+Backups: .vibe-rescue/backups/20261111T204444Z (gitignored, may contain secrets).
+
+vibe-rescue-kit by deepelynx
+
+$ vibe-rescue scan supabase-rls
+vibe-rescue scan
+/tmp/tmp.kTPSP0iVM4
+
+No problems found.
+0 findings · 0 errors · 0 warnings
+
+vibe-rescue-kit by deepelynx

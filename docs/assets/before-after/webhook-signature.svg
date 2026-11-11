@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 300" role="img" aria-labelledby="t-webhook-signature">
+  <title id="t-webhook-signature">Stripe webhooks check the signature before and after</title>
+  <rect width="1080" height="300" rx="20" fill="#0f1216"/>
+  <text x="28" y="42" fill="#ff6b3d" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">webhook-signature</text>
+  <text x="28" y="70" fill="#eef1f5" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="700">Stripe webhooks check the signature</text>
+  <rect x="28" y="92" width="500" height="180" rx="14" fill="#191e25" stroke="#5a2c22"/>
+  <rect x="552" y="92" width="500" height="180" rx="14" fill="#191e25" stroke="#1d5c45"/>
+  <text x="48" y="116" fill="#ff6b3d" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="700">BEFORE</text>
+  <text x="572" y="116" fill="#3ddc9a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="700">AFTER</text>
+  <text x="48" y="148" fill="#f3c4b5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15">const body = await req.json();</text>
+<text x="48" y="174" fill="#f3c4b5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15">if (body.type === "checkout.session…")</text>
+<text x="48" y="200" fill="#f3c4b5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15"># signature never read</text>
+  <text x="572" y="148" fill="#d7f8ea" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15">stripe.webhooks.constructEvent(…)</text>
+<text x="572" y="174" fill="#d7f8ea" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15">STRIPE_WEBHOOK_SECRET</text>
+<text x="572" y="200" fill="#d7f8ea" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15">invalid signature -&gt; 400</text>
+</svg>

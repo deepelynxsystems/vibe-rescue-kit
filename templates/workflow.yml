@@ -1,0 +1,19 @@
+name: vibe-rescue
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  vibe-rescue:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run vibe-rescue
+        uses: deepelynxsystems/vibe-rescue-kit@v1
+        with:
+          mode: MODE_VALUE

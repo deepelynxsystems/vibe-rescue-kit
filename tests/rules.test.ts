@@ -1,0 +1,239 @@
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { describe, expect, it } from "vitest";
+import { reportJson, reportText } from "../src/engine/report.js";
+import { run } from "../src/engine/runner.js";
+import { fixProject, rule, text, withFixture, withTemp } from "./helpers.js";
+
+const SERVICE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UifQ.signature1";
+const ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIn0.signature1";
+const STRIPE = "sk_test_1234567890abcdefghij";
+const PK = "pk_test_1234567890abcdefghij";
+
+describe("leaked-secrets", () => {
+  it("flags client secrets and keeps anon keys and server files", async () => {
+    await withFixture("leaked-secrets", async (dir) => {
+      const report = await run({ root: dir, mode: "scan", ruleId: "leaked-secrets" });
+      const found = rule(report, "leaked-secrets");
+      expect(found?.findings.map((item) => item.file).sort()).toEqual([
+        ".env",
+        ".env.example",
+        "src/App.tsx",
+        "src/lib/supabase.ts",
+        "src/lib/supabase.ts",
+      ].sort());
+      expect(reportText(report)).not.toContain(STRIPE);
+      expect(reportText(report)).not.toContain(SERVICE);
+      expect(reportJson(report)).not.toContain(STRIPE);
+      expect(reportJson(report)).not.toContain(SERVICE);
+      const fixed = await fixProject(dir);
+      expect(fixed.ok).toBe(true);
+      const source = await text(dir, "src/lib/supabase.ts");
+      expect(source).not.toContain(SERVICE);
+      expect(source).not.toContain(STRIPE);
+      expect(source).toContain(ANON);
+      expect(source).toContain(PK);
+      expect(source).toContain("serverOnlyEnv");
+      expect(await text(dir, "server/billing.ts")).toContain(STRIPE);
+      expect(await text(dir, "pages/api/charge.ts")).toContain(STRIPE);
+      expect(await text(dir, "src/App.tsx")).toContain('serverOnlyEnv("SUPABASE_SERVICE_ROLE_KEY")');
+      expect(await text(dir, ".gitignore")).toContain(".env");
+      expect(await text(dir, ".env")).toContain(SERVICE);
+      expect(await text(dir, ".env.example")).not.toContain(STRIPE);
+      const again = await run({ root: dir, mode: "fix" });
+      expect(again.ok).toBe(true);
+      expect(again.totals.filesChanged).toBe(0);
+    });
+  });
+});
+
+describe("supabase-rls", () => {
+  it("adds a deny-all migration and does not touch a database", async () => {
+    await withFixture("supabase-rls", async (dir) => {
+      const report = await run({ root: dir, mode: "scan", ruleId: "supabase-rls" });
+      const messages = rule(report, "supabase-rls")?.findings.map((item) => item.message).join("\n") ?? "";
+      expect(messages).toContain("public.notes");
+      expect(messages).toContain("public.audit_log");
+      expect(messages).toContain("public.legacy_flags");
+      expect(messages).toContain('public."Notes"');
+      expect(messages).not.toContain("public.profiles");
+      const fixed = await fixProject(dir);
+      expect(fixed.ok).toBe(true);
+      const files = await readdir(join(dir, "supabase/migrations"));
+      const created = files.find((file) => file.endsWith("_vibe_rescue_enable_rls.sql"));
+      expect(created).toBeTruthy();
+      const sql = await text(dir, `supabase/migrations/${created}`);
+      expect(sql).toContain("ENABLE ROW LEVEL SECURITY");
+      expect(sql).toContain('POLICY "vibe_rescue_deny_all"');
+      expect(sql).toContain("USING (false)");
+      expect(sql).toContain("does not connect to a database");
+      expect(sql).toContain("public.notes");
+      expect(sql).not.toContain("public.profiles ENABLE");
+      const again = await run({ root: dir, mode: "scan" });
+      expect(again.ok).toBe(true);
+    });
+  });
+});
+
+describe("missing-env", () => {
+  it("writes .env.example and a startup check that fails while values are empty", async () => {
+    await withFixture("missing-env", async (dir) => {
+      const report = await run({ root: dir, mode: "scan", ruleId: "missing-env" });
+      const names = rule(report, "missing-env")?.findings.map((item) => item.meta?.name).sort();
+      expect(names).toEqual(["API_TOKEN", "VITE_SUPABASE_URL"]);
+      const fixed = await fixProject(dir);
+      expect(fixed.ok).toBe(true);
+      const example = await text(dir, ".env.example");
+      expect(example).toContain("API_TOKEN=");
+      expect(example).toContain("VITE_SUPABASE_URL=");
+      const check = await text(dir, ".vibe-rescue/check-env.mjs");
+      expect(check).toContain('"API_TOKEN"');
+      expect(check).toContain('"VITE_SUPABASE_URL"');
+      expect(await text(dir, "package.json")).toContain("check-env.mjs");
+      const ran = spawnSync(process.execPath, [".vibe-rescue/check-env.mjs"], { cwd: dir, encoding: "utf8" });
+      expect(ran.status).toBe(1);
+      expect(ran.stderr).toContain("API_TOKEN");
+      const again = await run({ root: dir, mode: "scan" });
+      expect(again.ok).toBe(true);
+    });
+  });
+});
+
+describe("spa-rewrites", () => {
+  it("adds host rewrites and preserves existing vercel config", async () => {
+    await withFixture("spa-rewrites", async (dir) => {
+      const before = await run({ root: dir, mode: "scan", ruleId: "spa-rewrites" });
+      expect(rule(before, "spa-rewrites")?.findings).toHaveLength(3);
+      const fixed = await fixProject(dir);
+      expect(fixed.ok).toBe(true);
+      const vercel = JSON.parse(await text(dir, "vercel.json")) as { buildCommand: string; rewrites: Array<{ source: string; destination: string }> };
+      expect(vercel.buildCommand).toBe("npm run build");
+      expect(vercel.rewrites[0].destination).toBe("/index.html");
+      expect(vercel.rewrites[0].source).toBe("/((?!api/).*)");
+      expect(await text(dir, "netlify.toml")).toContain('to = "/index.html"');
+      expect(await text(dir, "public/_redirects")).toContain("/index.html");
+      expect((await run({ root: dir, mode: "scan" })).ok).toBe(true);
+    });
+  });
+
+  it("skips Next.js projects", async () => {
+    await withTemp(async (dir) => {
+      await writeProject(dir, {
+        "package.json": JSON.stringify({ dependencies: { next: "^15.0.0", react: "^18.3.1" } }),
+        "index.html": "<div id=\"root\"></div>\n",
+        "src/main.tsx": "export const route = 'BrowserRouter';\n",
+      });
+      const report = await run({ root: dir, mode: "scan", ruleId: "spa-rewrites" });
+      expect(rule(report, "spa-rewrites")?.findings ?? []).toHaveLength(0);
+    });
+  });
+});
+
+describe("hardcoded-localhost", () => {
+  it("replaces client localhost URLs and leaves server files", async () => {
+    await withFixture("hardcoded-localhost", async (dir) => {
+      const report = await run({ root: dir, mode: "scan", ruleId: "hardcoded-localhost" });
+      expect(rule(report, "hardcoded-localhost")?.findings).toHaveLength(3);
+      const fixed = await fixProject(dir);
+      expect(fixed.ok).toBe(true);
+      const source = await text(dir, "src/api.ts");
+      expect(source).not.toContain("http://localhost");
+      expect(source).not.toContain("127.0.0.1");
+      expect(source).toContain("import.meta.env.VITE_API_BASE_URL");
+      expect(source).toContain("import.meta.env.VITE_SUPABASE_URL");
+      expect(source).toContain("/api/items");
+      expect(await text(dir, "src/server/internal.ts")).toContain("http://localhost:4000");
+      expect(await text(dir, ".env.example")).toContain("VITE_API_BASE_URL=http://localhost:3000");
+      expect(await text(dir, ".env.example")).toContain("VITE_SUPABASE_URL=http://localhost:54321");
+      expect((await run({ root: dir, mode: "scan" })).ok).toBe(true);
+    });
+  });
+});
+
+describe("import-paths", () => {
+  it("fixes casing and adds a missing dependency", async () => {
+    await withFixture("import-paths", async (dir) => {
+      const report = await run({ root: dir, mode: "scan", ruleId: "import-paths" });
+      const findings = rule(report, "import-paths")?.findings ?? [];
+      expect(findings.map((item) => item.message).join("\n")).toContain("./components/button");
+      expect(findings.map((item) => item.message).join("\n")).toContain("date-fns");
+      expect(findings.map((item) => item.message).join("\n")).not.toContain("react");
+      expect(findings.map((item) => item.message).join("\n")).not.toContain('"fs"');
+      const fixed = await fixProject(dir);
+      expect(fixed.ok).toBe(true);
+      const source = await text(dir, "src/App.tsx");
+      expect(source).toContain('from "./components/Button"');
+      expect(source).toContain('from "@/lib/safe"');
+      const pkg = JSON.parse(await text(dir, "package.json")) as { dependencies: Record<string, string> };
+      expect(pkg.dependencies["date-fns"]).toBe("*");
+      expect(pkg.dependencies.react).toBe("^18.3.1");
+      expect((await run({ root: dir, mode: "scan" })).ok).toBe(true);
+    });
+  });
+});
+
+describe("webhook-signature", () => {
+  it("adds constructEvent to App Router and Pages handlers", async () => {
+    await withFixture("webhook-signature", async (dir) => {
+      const report = await run({ root: dir, mode: "scan", ruleId: "webhook-signature" });
+      const files = rule(report, "webhook-signature")?.findings.map((item) => item.file).sort();
+      expect(files).toEqual(["pages/api/stripe-webhook.ts", "server/stripe-webhook.ts"]);
+      const fixed = await fixProject(dir);
+      expect(fixed.ok).toBe(true);
+      const app = await text(dir, "server/stripe-webhook.ts");
+      const pages = await text(dir, "pages/api/stripe-webhook.ts");
+      expect(app).toContain("constructEvent");
+      expect(app).toContain("STRIPE_WEBHOOK_SECRET");
+      expect(app).not.toContain("await req.json()");
+      expect(pages).toContain("constructEvent");
+      expect(pages).toContain("bodyParser: false");
+      expect(await text(dir, "src/billing-ok.ts")).not.toContain("constructEvent");
+      expect(await text(dir, ".env.example")).toContain("STRIPE_WEBHOOK_SECRET=");
+      expect((await run({ root: dir, mode: "scan" })).ok).toBe(true);
+    });
+  });
+});
+
+describe("broken-spa example", () => {
+  it("fixes every built-in rule and stays fixed", async () => {
+    await withFixture("examples/broken-spa", async (dir) => {
+      const before = await run({ root: dir, mode: "scan" });
+      expect(before.ok).toBe(false);
+      const ids = new Set(before.results.filter((item) => item.findings.length > 0).map((item) => item.ruleId));
+      for (const id of [
+        "leaked-secrets",
+        "import-paths",
+        "hardcoded-localhost",
+        "spa-rewrites",
+        "supabase-rls",
+        "webhook-signature",
+        "missing-env",
+      ]) {
+        expect(ids.has(id)).toBe(true);
+      }
+      const fixed = await fixProject(dir);
+      expect(fixed.ok).toBe(true);
+      const main = await text(dir, "src/main.tsx");
+      expect(main).not.toContain(SERVICE);
+      expect(main).not.toContain("http://localhost:3000");
+      expect(main).toContain("./components/Button");
+      expect(await text(dir, "src/lib/public.ts")).toContain(ANON);
+      expect(await text(dir, "src/lib/public.ts")).toContain(PK);
+      expect(await text(dir, "server/billing.ts")).toContain(STRIPE);
+      const after = await run({ root: dir, mode: "scan" });
+      expect(after.ok).toBe(true);
+      const second = await run({ root: dir, mode: "fix" });
+      expect(second.totals.filesChanged).toBe(0);
+    });
+  });
+});
+
+async function writeProject(dir: string, files: Record<string, string>): Promise<void> {
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const { dirname } = await import("node:path");
+  for (const [file, contents] of Object.entries(files)) {
+    await mkdir(join(dir, dirname(file)), { recursive: true });
+    await writeFile(join(dir, file), contents.endsWith("\n") ? contents : `${contents}\n`);
+  }
+}
