@@ -1,0 +1,45 @@
+$ vibe-rescue scan import-paths
+vibe-rescue scan
+/tmp/tmp.Xzg5PDdRY6
+
+import-paths  found
+  ✗  src/App.tsx
+     src/App.tsx imports date-fns, which is not in package.json.
+     date-fns will be added with version *. Run npm install afterwards.
+  ✗  src/App.tsx
+     src/App.tsx imports ./components/button, but the path on disk is ./components/Button.
+     The specifier will be rewritten to the casing that exists on disk.
+
+2 findings · 2 errors · 0 warnings
+
+vibe-rescue-kit by deepelynx
+
+$ vibe-rescue fix --yes import-paths
+vibe-rescue fix
+/tmp/tmp.Xzg5PDdRY6
+
+import-paths  fixed
+  ✗  src/App.tsx
+     src/App.tsx imports date-fns, which is not in package.json.
+     date-fns will be added with version *. Run npm install afterwards.
+  ✗  src/App.tsx
+     src/App.tsx imports ./components/button, but the path on disk is ./components/Button.
+     The specifier will be rewritten to the casing that exists on disk.
+  updated src/App.tsx
+  updated package.json
+  note: Added date-fns@* to package.json. Run npm install to fetch it.
+  Verification passed.
+
+1 rule changed files · 0 rolled back · 2 files
+Backups: .vibe-rescue/backups/20261111T204446Z (gitignored, may contain secrets).
+
+vibe-rescue-kit by deepelynx
+
+$ vibe-rescue scan import-paths
+vibe-rescue scan
+/tmp/tmp.Xzg5PDdRY6
+
+No problems found.
+0 findings · 0 errors · 0 warnings
+
+vibe-rescue-kit by deepelynx

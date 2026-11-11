@@ -1,0 +1,6 @@
+id: webhook-signature
+title: Unverified Stripe webhooks
+description: A Stripe webhook that trusts the JSON body can be forged. Verify the stripe-signature header with constructEvent.
+severity: error
+scopeNote: Adds a signature-check scaffold and env names. It does not call Stripe and does not invent a webhook secret.
+strategy: webhook-signature

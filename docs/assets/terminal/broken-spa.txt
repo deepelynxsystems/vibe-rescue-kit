@@ -1,0 +1,171 @@
+$ vibe-rescue scan broken-spa
+vibe-rescue scan
+/tmp/tmp.2DYnvalrvu
+
+leaked-secrets  found
+  ✗  src/main.tsx:5
+     Hardcoded service role jwt in client file src/main.tsx.
+     Move it to SUPABASE_SERVICE_ROLE_KEY in a gitignored .env file and rotate it.
+  ✗  .env
+     .env is not gitignored and can be committed with secrets.
+     Add it to .gitignore. If git already tracks it, run git rm --cached .env and rotate the keys.
+
+import-paths  found
+  ✗  src/main.tsx
+     src/main.tsx imports date-fns, which is not in package.json.
+     date-fns will be added with version *. Run npm install afterwards.
+  ✗  src/main.tsx
+     src/main.tsx imports ./components/button, but the path on disk is ./components/Button.
+     The specifier will be rewritten to the casing that exists on disk.
+
+hardcoded-localhost  found
+  ✗  src/main.tsx:6
+     Hardcoded http://localhost:3000 in src/main.tsx.
+     Use import.meta.env.VITE_API_BASE_URL. VITE_API_BASE_URL will be added to .env.example.
+
+spa-rewrites  found
+  ✗  vercel.json
+     vercel.json has no SPA rewrite to /index.html.
+     A rewrite to /index.html will be added. Nothing is deployed.
+  ✗  netlify.toml
+     Netlify redirect from /* to /index.html (200) is missing.
+     A rewrite to /index.html will be added. Nothing is deployed.
+  ✗  public/_redirects
+     Static host _redirects rule /* /index.html 200 is missing.
+     A rewrite to /index.html will be added. Nothing is deployed.
+
+supabase-rls  found
+  ✗  supabase/migrations/20240101000000_init.sql
+     Table public.notes is created without ENABLE ROW LEVEL SECURITY.
+     A new migration will enable RLS and add a deny-all policy for anon and authenticated. No database is contacted.
+
+webhook-signature  found
+  ✗  server/stripe-webhook.ts
+     server/stripe-webhook.ts handles a Stripe webhook without constructEvent.
+     A signature check will be inserted. Set STRIPE_WEBHOOK_SECRET and send Stripe the raw body.
+
+missing-env  found
+  ✗  server/stripe-webhook.ts:3
+     STRIPE_SECRET_KEY is referenced in server/stripe-webhook.ts but missing from .env.example and .env.
+     An .env.example entry and .vibe-rescue/check-env.mjs will be generated. Fill in the real value locally.
+  ✗  src/lib/config.ts:1
+     API_TOKEN is referenced in src/lib/config.ts but missing from .env.example and .env.
+     An .env.example entry and .vibe-rescue/check-env.mjs will be generated. Fill in the real value locally.
+  ✗  src/lib/config.ts:2
+     VITE_SUPABASE_URL is referenced in src/lib/config.ts but missing from .env.example and .env.
+     An .env.example entry and .vibe-rescue/check-env.mjs will be generated. Fill in the real value locally.
+
+13 findings · 13 errors · 0 warnings
+
+vibe-rescue-kit by deepelynx
+
+$ vibe-rescue fix --yes broken-spa
+vibe-rescue fix
+/tmp/tmp.2DYnvalrvu
+
+leaked-secrets  fixed
+  ✗  src/main.tsx:5
+     Hardcoded service role jwt in client file src/main.tsx.
+     Move it to SUPABASE_SERVICE_ROLE_KEY in a gitignored .env file and rotate it.
+  ✗  .env
+     .env is not gitignored and can be committed with secrets.
+     Add it to .gitignore. If git already tracks it, run git rm --cached .env and rotate the keys.
+  updated src/main.tsx
+  created src/vibe-rescue/server-only-env.ts
+  updated .gitignore
+  updated .env
+  created .env.example
+  note: Rotate SUPABASE_SERVICE_ROLE_KEY. It was exposed in src/main.tsx.
+  note: .env is now gitignored. If git still tracks it, run: git rm --cached .env
+  Verification passed.
+
+import-paths  fixed
+  ✗  src/main.tsx
+     src/main.tsx imports date-fns, which is not in package.json.
+     date-fns will be added with version *. Run npm install afterwards.
+  ✗  src/main.tsx
+     src/main.tsx imports ./components/button, but the path on disk is ./components/Button.
+     The specifier will be rewritten to the casing that exists on disk.
+  updated src/main.tsx
+  updated package.json
+  note: Added date-fns@* to package.json. Run npm install to fetch it.
+  Verification passed.
+
+hardcoded-localhost  fixed
+  ✗  src/main.tsx:7
+     Hardcoded http://localhost:3000 in src/main.tsx.
+     Use import.meta.env.VITE_API_BASE_URL. VITE_API_BASE_URL will be added to .env.example.
+  updated src/main.tsx
+  updated .env.example
+  updated .env
+  note: Localhost origins were copied into .env as the local default. Change them per environment.
+  Verification passed.
+
+spa-rewrites  fixed
+  ✗  vercel.json
+     vercel.json has no SPA rewrite to /index.html.
+     A rewrite to /index.html will be added. Nothing is deployed.
+  ✗  netlify.toml
+     Netlify redirect from /* to /index.html (200) is missing.
+     A rewrite to /index.html will be added. Nothing is deployed.
+  ✗  public/_redirects
+     Static host _redirects rule /* /index.html 200 is missing.
+     A rewrite to /index.html will be added. Nothing is deployed.
+  updated vercel.json
+  created netlify.toml
+  created public/_redirects
+  note: Host rewrites send unknown paths to index.html with status 200. API routes are left alone when an api/ directory exists.
+  Verification passed.
+
+supabase-rls  fixed
+  ✗  supabase/migrations/20240101000000_init.sql
+     Table public.notes is created without ENABLE ROW LEVEL SECURITY.
+     A new migration will enable RLS and add a deny-all policy for anon and authenticated. No database is contacted.
+  created supabase/migrations/20261111204446_vibe_rescue_enable_rls.sql
+  note: Review the new migration before you apply it. vibe-rescue does not connect to a database.
+  note: The deny-all policy blocks anon and authenticated until you replace it with a real policy. The service role bypasses RLS.
+  Verification passed.
+
+webhook-signature  fixed
+  ✗  server/stripe-webhook.ts
+     server/stripe-webhook.ts handles a Stripe webhook without constructEvent.
+     A signature check will be inserted. Set STRIPE_WEBHOOK_SECRET and send Stripe the raw body.
+  updated server/stripe-webhook.ts
+  updated .env.example
+  note: server/stripe-webhook.ts: Verify the Stripe signature with constructEvent before trusting the event.
+  Verification passed.
+
+missing-env  fixed
+  ✗  server/stripe-webhook.ts:4
+     STRIPE_WEBHOOK_SECRET is referenced in server/stripe-webhook.ts but missing from .env.
+     An .env.example entry and .vibe-rescue/check-env.mjs will be generated. Fill in the real value locally.
+  ✗  server/stripe-webhook.ts:18
+     STRIPE_SECRET_KEY is referenced in server/stripe-webhook.ts but missing from .env.
+     An .env.example entry and .vibe-rescue/check-env.mjs will be generated. Fill in the real value locally.
+  ✗  src/lib/config.ts:1
+     API_TOKEN is referenced in src/lib/config.ts but missing from .env.example and .env.
+     An .env.example entry and .vibe-rescue/check-env.mjs will be generated. Fill in the real value locally.
+  ✗  src/lib/config.ts:2
+     VITE_SUPABASE_URL is referenced in src/lib/config.ts but missing from .env.example and .env.
+     An .env.example entry and .vibe-rescue/check-env.mjs will be generated. Fill in the real value locally.
+  updated .env.example
+  updated .env
+  created .vibe-rescue/check-env.mjs
+  updated package.json
+  note: Empty values were added. The startup check exits until those variables are set.
+  note: npm run dev runs the check first via predev when a dev script exists.
+  Verification passed.
+
+7 rules changed files · 0 rolled back · 12 files
+Backups: .vibe-rescue/backups/20261111T204446Z (gitignored, may contain secrets).
+
+vibe-rescue-kit by deepelynx
+
+$ vibe-rescue scan broken-spa
+vibe-rescue scan
+/tmp/tmp.2DYnvalrvu
+
+No problems found.
+0 findings · 0 errors · 0 warnings
+
+vibe-rescue-kit by deepelynx

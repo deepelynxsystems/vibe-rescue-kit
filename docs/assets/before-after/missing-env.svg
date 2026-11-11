@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 300" role="img" aria-labelledby="t-missing-env">
+  <title id="t-missing-env">Referenced env vars get a startup check before and after</title>
+  <rect width="1080" height="300" rx="20" fill="#0f1216"/>
+  <text x="28" y="42" fill="#ff6b3d" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">missing-env</text>
+  <text x="28" y="70" fill="#eef1f5" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="700">Referenced env vars get a startup check</text>
+  <rect x="28" y="92" width="500" height="180" rx="14" fill="#191e25" stroke="#5a2c22"/>
+  <rect x="552" y="92" width="500" height="180" rx="14" fill="#191e25" stroke="#1d5c45"/>
+  <text x="48" y="116" fill="#ff6b3d" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="700">BEFORE</text>
+  <text x="572" y="116" fill="#3ddc9a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="700">AFTER</text>
+  <text x="48" y="148" fill="#f3c4b5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15">process.env.API_TOKEN</text>
+<text x="48" y="174" fill="#f3c4b5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15"># absent from .env.example</text>
+<text x="48" y="200" fill="#f3c4b5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15"># absent from .env</text>
+  <text x="572" y="148" fill="#d7f8ea" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15">API_TOKEN=          # .env.example</text>
+<text x="572" y="174" fill="#d7f8ea" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15">node .vibe-rescue/check-env.mjs</text>
+<text x="572" y="200" fill="#d7f8ea" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15">Missing environment variables</text>
+</svg>

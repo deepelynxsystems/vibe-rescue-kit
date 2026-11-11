@@ -1,0 +1,6 @@
+id: spa-rewrites
+title: SPA refresh and deep-link 404s
+description: Vite single-page apps need a host rewrite to index.html or refreshing a client route returns 404.
+severity: error
+scopeNote: Writes Vercel, Netlify, and static redirect files. It does not deploy, and it skips Next.js.
+strategy: spa-rewrites

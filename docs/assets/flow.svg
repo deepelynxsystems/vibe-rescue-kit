@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 420" role="img" aria-labelledby="ftitle">
+<title id="ftitle">detect, fix, verify, keep or roll back</title>
+<rect width="1100" height="420" rx="24" fill="#0f1216"/>
+<text x="40" y="48" fill="#eef1f5" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="700">How a fix is allowed to land</text>
+<rect x="40" y="80" width="220" height="150" rx="16" fill="#191e25" stroke="#2b323c"/>
+<text x="60" y="118" fill="#ff6b3d" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="720">Detect</text>
+<text x="60" y="152" fill="#9aa4b1" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">A rule reads the project</text>
+<text x="60" y="174" fill="#9aa4b1" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">and reports findings.</text>
+<rect x="300" y="80" width="220" height="150" rx="16" fill="#191e25" stroke="#2b323c"/>
+<text x="320" y="118" fill="#eef1f5" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="720">Fix</text>
+<text x="320" y="152" fill="#9aa4b1" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">The rule edits files.</text>
+<text x="320" y="174" fill="#9aa4b1" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Originals are snapshotted.</text>
+<rect x="560" y="80" width="220" height="150" rx="16" fill="#191e25" stroke="#2b323c"/>
+<text x="580" y="118" fill="#3ddc9a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="720">Verify</text>
+<text x="580" y="152" fill="#9aa4b1" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">The same rule runs again.</text>
+<text x="580" y="174" fill="#9aa4b1" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">The finding must be gone.</text>
+<rect x="820" y="80" width="220" height="150" rx="16" fill="#191e25" stroke="#2b323c"/>
+<text x="840" y="118" fill="#3ddc9a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="720">Keep</text>
+<text x="840" y="152" fill="#9aa4b1" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Changes stay.</text>
+<text x="840" y="174" fill="#9aa4b1" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">A backup is saved.</text>
+<path d="M260 155 H296" stroke="#ff6b3d" stroke-width="2" fill="none"/>
+<path d="M290 149 l8 6 l-8 6" fill="#ff6b3d"/>
+<path d="M520 155 H556" stroke="#ff6b3d" stroke-width="2" fill="none"/>
+<path d="M550 149 l8 6 l-8 6" fill="#ff6b3d"/>
+<path d="M780 155 H816" stroke="#ff6b3d" stroke-width="2" fill="none"/>
+<path d="M810 149 l8 6 l-8 6" fill="#ff6b3d"/>
+<rect x="300" y="270" width="480" height="110" rx="16" fill="#241612" stroke="#ff6b3d"/>
+<text x="324" y="310" fill="#ff6b3d" font-family="ui-sans-serif, system-ui, sans-serif" font-size="20" font-weight="720">Rollback</text>
+<text x="324" y="340" fill="#eef1f5" font-family="ui-sans-serif, system-ui, sans-serif" font-size="15">If verification fails, every file that rule touched is restored from the snapshot.</text>
+<text x="324" y="362" fill="#9aa4b1" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">The report says what failed. The rest of the project is left as it was.</text>
+<path d="M670 230 V270" stroke="#ff6b3d" stroke-width="2" fill="none"/>
+<path d="M664 262 l6 8 l6 -8" fill="#ff6b3d"/>
+</svg>
