@@ -287,7 +287,7 @@ jobs:
           fail-on-findings: true
 ```
 
-`mode: fix` runs `fix --yes`. A fix that fails verification is rolled back. With `fail-on-findings: true`, the step fails when a problem is still open at the chosen severity. Findings are appended to the job summary. The report file is JSON either way, and secret-shaped strings in it are redacted.
+`mode: fix` runs `fix --yes`. A fix that fails verification is rolled back. With `fail-on-findings: true`, the step fails when a problem is still open at the chosen severity. The same Markdown is appended to the job summary and written to `vibe-rescue-summary.md`. The report file is JSON either way, and secret-shaped strings in it are redacted.
 
 | Input | Default | Description |
 | --- | --- | --- |

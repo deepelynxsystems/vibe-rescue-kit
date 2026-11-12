@@ -36,6 +36,8 @@ setOutput("summary", summary);
 setOutput("fail", shouldFail ? "true" : "false");
 
 const markdown = renderSummary(report, open, ruleErrors, summary);
+const markdownPath = join(workspace, "vibe-rescue-summary.md");
+writeFileSync(markdownPath, `${markdown}\n`);
 const summaryFile = process.env.GITHUB_STEP_SUMMARY;
 if (summaryFile) appendFileSync(summaryFile, `${markdown}\n`);
 if (format === "json") {

@@ -38,7 +38,7 @@ jobs:
             if (report.results.length !== 0) process.exit(1);
           '
           grep -F -q "0 open findings" <<<"$SUMMARY"
-          grep -F -q "No problems found" "$GITHUB_STEP_SUMMARY"
+          grep -F -q "No problems found" vibe-rescue-summary.md
 
       - name: Dirty project is detected
         id: dirty
@@ -71,9 +71,9 @@ jobs:
             if (report.totals.findings !== 3) process.exit(1);
             if (report.ok !== false) process.exit(1);
           '
-          grep -F -q "leaked-secrets" "$GITHUB_STEP_SUMMARY"
-          grep -F -q "hardcoded-localhost" "$GITHUB_STEP_SUMMARY"
-          if grep -F -q "sk_test_NOTAREALKEY12345" "$REPORT" "$GITHUB_STEP_SUMMARY"; then
+          grep -F -q "leaked-secrets" vibe-rescue-summary.md
+          grep -F -q "hardcoded-localhost" vibe-rescue-summary.md
+          if grep -F -q "sk_test_NOTAREALKEY12345" "$REPORT" vibe-rescue-summary.md; then
             echo "report or job summary contains the fixture secret"
             exit 1
           fi
@@ -192,7 +192,7 @@ jobs:
             if (report.mode !== "fix") process.exit(1);
             if (report.totals.rolledBack !== 0) process.exit(1);
           '
-          if grep -F -q "sk_test_NOTAREALKEY12345" "$REPORT" "$GITHUB_STEP_SUMMARY"; then
+          if grep -F -q "sk_test_NOTAREALKEY12345" "$REPORT" vibe-rescue-summary.md; then
             echo "report or job summary contains the fixture secret"
             exit 1
           fi

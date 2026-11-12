@@ -1,6 +1,7 @@
 node_modules/
 dist/
 vibe-rescue-report.json
+vibe-rescue-summary.md
 coverage/
 *.log
 .DS_Store
