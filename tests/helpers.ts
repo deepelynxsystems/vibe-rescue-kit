@@ -15,7 +15,7 @@ export async function withFixture(name: string, fn: (dir: string) => Promise<voi
   try {
     await fn(dir);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTemp(dir);
   }
 }
 
@@ -24,8 +24,12 @@ export async function withTemp(fn: (dir: string) => Promise<void>): Promise<void
   try {
     await fn(dir);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTemp(dir);
   }
+}
+
+async function removeTemp(dir: string): Promise<void> {
+  await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
 
 export function rule(report: RunReport, id: string) {

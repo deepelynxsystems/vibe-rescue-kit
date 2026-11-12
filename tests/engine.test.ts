@@ -148,6 +148,15 @@ describe("watch", () => {
         await new Promise((resolve) => setTimeout(resolve, 150));
       }
       child.kill("SIGINT");
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          child.kill("SIGKILL");
+        }, 3000);
+        child.once("exit", () => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
       expect(fixed).not.toContain(STRIPE);
       expect(fixed).toContain("serverOnlyEnv");
     });
