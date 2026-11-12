@@ -4,7 +4,7 @@ import { upsertEnv } from "../engine/env.js";
 import { depNames, readPackage } from "../engine/package-file.js";
 import { lineAt, stringLiterals } from "../engine/text.js";
 import { stringArray } from "./config.js";
-import { DEFAULT_CLIENT_ROOTS, isClientSource } from "./client.js";
+import { DEFAULT_CLIENT_ROOTS, isClientSource, isNextServerModule } from "./client.js";
 import type { Strategy } from "./types.js";
 
 const GLOBS = [
@@ -20,7 +20,7 @@ export const hardcodedLocalhost: Strategy = {
     return {
       id: "hardcoded-localhost",
       title: "Hardcoded localhost URLs",
-      description: "Client code should read its API origin from the environment so preview, staging, and production do not keep calling localhost.",
+      description: "Client code should read its API origin from the environment so preview, staging, and production do not keep calling localhost. Dev-only branches, placeholders, and dev configs are ignored. A bare localhost:port counts.",
       severity: "error",
       scopeNote: "Rewrites client source only. Server files may keep a local URL. Port 54321 is treated as the local Supabase URL.",
       strategy: "hardcoded-localhost",
@@ -46,15 +46,18 @@ function createRule(def: RuleDefinition): Rule {
     async detect(ctx) {
       const pkg = await readPackage(ctx);
       const files = await ctx.glob(GLOBS);
+      const nextApp = pkg ? depNames(pkg.json).has("next") : false;
       const style = styleOf(pkg?.json ?? null, files);
       const findings: Finding[] = [];
       for (const file of files) {
-        if (!isClientSource(file, roots)) continue;
+        if (!isClientSource(file, roots) || isDevConfig(file)) continue;
         const text = await ctx.read(file);
+        if (nextApp && isNextServerModule(file, text)) continue;
         for (const literal of stringLiterals(text)) {
           if (literal.hasExpr) continue;
           const url = classify(literal.value);
           if (!url) continue;
+          if (isPlaceholder(text, literal.start) || isDevGuarded(text, literal.start)) continue;
           if (url.path.includes("`") || url.path.includes("${")) continue;
           const env = namesFor(style, url.kind);
           findings.push({
@@ -145,9 +148,57 @@ function namesFor(style: "vite" | "next" | "node", kind: "api" | "supabase"): { 
 
 function classify(value: string): { origin: string; path: string; kind: "api" | "supabase" } | null {
   const match = value.match(/^(https?:\/\/(?:localhost|127\.0\.0\.1)(?::(\d+))?)(\/.*)?$/);
-  if (!match) return null;
-  const port = match[2];
-  const path = match[3] && match[3] !== "/" ? match[3] : "";
+  if (match) {
+    const port = match[2];
+    const path = match[3] && match[3] !== "/" ? match[3] : "";
+    const kind = port === "54321" || port === "54322" ? "supabase" : "api";
+    return { origin: match[1], path, kind };
+  }
+  const bare = value.match(/^((?:localhost|127\.0\.0\.1):\d+)(\/.*)?$/);
+  if (!bare) return null;
+  const port = bare[1].slice(bare[1].lastIndexOf(":") + 1);
+  const path = bare[2] && bare[2] !== "/" ? bare[2] : "";
   const kind = port === "54321" || port === "54322" ? "supabase" : "api";
-  return { origin: match[1], path, kind };
+  return { origin: bare[1], path, kind };
+}
+
+function isDevConfig(file: string): boolean {
+  return /(^|\/)(?:vite|vitest|playwright|eslint|postcss|tailwind)\.config\.[cm]?[jt]s$/.test(file) || /(^|\/)[^/]+\.config\.[cm]?[jt]s$/.test(file);
+}
+
+function isPlaceholder(source: string, start: number): boolean {
+  const before = source.slice(Math.max(0, start - 48), start);
+  return /placeholder\s*[:=]\s*$/.test(before);
+}
+
+function isDevGuarded(source: string, start: number): boolean {
+  const from = Math.max(0, source.lastIndexOf(";", start), source.lastIndexOf("\n", start));
+  const window = source.slice(from, start);
+  if (/import\.meta\.env\.DEV\b/.test(window)) return true;
+  if (/NODE_ENV\s*={2,3}\s*['"]development['"]/.test(window)) return true;
+  if (/NODE_ENV\s*!={1,2}\s*['"]production['"]/.test(window)) return true;
+  const devBranch = window.match(/\bdev\s*\?([\s\S]*)$/);
+  if (devBranch && !hasUnquotedColon(devBranch[1])) return true;
+  return false;
+}
+
+function hasUnquotedColon(text: string): boolean {
+  let quote = "";
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text[i];
+    if (quote) {
+      if (c === "\\") {
+        i += 1;
+        continue;
+      }
+      if (c === quote) quote = "";
+      continue;
+    }
+    if (c === "'" || c === '"' || c === "`") {
+      quote = c;
+      continue;
+    }
+    if (c === ":") return true;
+  }
+  return false;
 }

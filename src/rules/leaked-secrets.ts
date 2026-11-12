@@ -3,9 +3,10 @@ import type { Finding, Rule, RuleDefinition } from "../types.js";
 import { defineRule, verifyFixed } from "../engine/define.js";
 import { SECRET_GITIGNORE_BLOCK, blankEnvValue, upsertEnv, type EnvEntry } from "../engine/env.js";
 import { gitignoreMatcher } from "../engine/git.js";
+import { depNames, readPackage } from "../engine/package-file.js";
 import { codeSpans, insertImport, lineAt, relativeImport, stringLiterals, usesSemicolons } from "../engine/text.js";
 import { appendStrings, detectConfig, stringArray } from "./config.js";
-import { DEFAULT_CLIENT_ROOTS, isClientSource, isTypeScript } from "./client.js";
+import { DEFAULT_CLIENT_ROOTS, isClientSource, isNextServerModule, isTypeScript } from "./client.js";
 import type { Strategy } from "./types.js";
 
 interface SecretPattern {
@@ -34,6 +35,8 @@ const PATTERNS: SecretPattern[] = [
     kind: "jwt_service_role",
   },
 ];
+
+const ENV_IGNORE_TARGETS = [".env", ".env.local", ".env.development", ".env.production"];
 
 const TRACKED_ENV = [
   ".env",
@@ -68,8 +71,8 @@ function defaults(): RuleDefinition {
   return {
     id: "leaked-secrets",
     title: "Leaked secrets in client code",
-    description:
-      "Service-role keys, secret API keys, and unignored .env files do not belong in a client bundle or in git.",
+      description:
+      "Service-role keys, secret API keys, and unignored .env files do not belong in a client bundle or in git. Next.js server components are not client code.",
     severity: "error",
     scopeNote: "Does not rotate keys or rewrite git history. You do that at the provider and with git rm --cached.",
     strategy: "leaked-secrets",
@@ -98,10 +101,13 @@ function createRule(def: RuleDefinition): Rule {
     async detect(ctx) {
       const findings: Finding[] = [];
       const claimed = new Map<string, string>();
+      const pkg = await readPackage(ctx);
+      const nextApp = pkg ? depNames(pkg.json).has("next") : false;
       const files = await ctx.glob(extraGlobs);
       for (const file of files) {
         if (!isClientSource(file, roots)) continue;
         const text = await ctx.read(file);
+        if (nextApp && isNextServerModule(file, text)) continue;
         if (text.includes("\0")) continue;
         for (const literal of stringLiterals(text)) {
           if (literal.hasExpr) continue;
@@ -143,6 +149,18 @@ function createRule(def: RuleDefinition): Rule {
 
       const gitignore = await ctx.readMaybe(".gitignore");
       const matcher = gitignoreMatcher(gitignore);
+      const uncovered = ENV_IGNORE_TARGETS.filter((file) => !matcher.ignores(file));
+      if (uncovered.length > 0) {
+        findings.push({
+          fingerprint: "leaked-secrets:gitignore",
+          ruleId: def.id,
+          severity: "warning",
+          message: `.gitignore does not ignore ${uncovered.join(", ")}.`,
+          file: ".gitignore",
+          hint: "Ignore .env and .env.* (keep !.env.example). A later commit can otherwise add the real file.",
+          meta: { kind: "gitignore" },
+        });
+      }
       for (const file of TRACKED_ENV) {
         if (!(await ctx.exists(file))) continue;
         if (matcher.ignores(file)) continue;
@@ -182,7 +200,7 @@ function createRule(def: RuleDefinition): Rule {
       const valueToEnv = new Map<string, string>();
       const memberToEnv = new Map<string, string>();
       const exampleEdits = new Map<string, Map<string, string>>();
-      let needsGitignore = findings.some((finding) => finding.meta?.kind === "env-file");
+      let needsGitignore = findings.some((finding) => finding.meta?.kind === "env-file" || finding.meta?.kind === "gitignore");
 
       for (const finding of findings) {
         const kind = finding.meta?.kind;

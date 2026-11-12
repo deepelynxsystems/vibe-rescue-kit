@@ -38,7 +38,7 @@ export const missingEnv: Strategy = {
     return {
       id: "missing-env",
       title: "Missing environment variables",
-      description: "Env vars referenced in code need a documented name. A name in .env.example is enough when no local env file exists. Platform variables are ignored.",
+      description: "Env vars referenced in code need a documented name. A name in .env.example is enough when no local env file exists. A read with ||, ??, or a default parameter is optional. Platform variables are ignored.",
       severity: "error",
       scopeNote: "Does not invent secret values. Empty keys are written so the startup check keeps failing until you fill them in.",
       strategy: "missing-env",
@@ -199,6 +199,45 @@ function isPlatformEnv(name: string): boolean {
   return name === "HTTP_PROXY" || name === "HTTPS_PROXY" || name === "ALL_PROXY" || name === "NO_PROXY" || name === "PLAYWRIGHT_BROWSERS_PATH";
 }
 
+function isOptionalEnv(source: string, start: number, end: number): boolean {
+  let i = skipSpace(source, end);
+  if (source.startsWith("as", i) && !/[A-Za-z0-9_$]/.test(source[i + 2] ?? "")) {
+    i = skipSpace(source, i + 2);
+    while (i < source.length && /[A-Za-z0-9_$.]/.test(source[i])) i += 1;
+    i = skipSpace(source, i);
+  }
+  while (source.startsWith("?.", i) || (source[i] === "." && source[i + 1] !== ".")) {
+    i += source.startsWith("?.", i) ? 2 : 1;
+    while (i < source.length && /[A-Za-z0-9_$]/.test(source[i])) i += 1;
+    if (source[i] === "(") {
+      let depth = 0;
+      do {
+        if (source[i] === "(") depth += 1;
+        else if (source[i] === ")") depth -= 1;
+        i += 1;
+      } while (i < source.length && depth > 0);
+    }
+    i = skipSpace(source, i);
+  }
+  if (source[i] === ")") i = skipSpace(source, i + 1);
+  if (source.startsWith("||", i) || source.startsWith("??", i)) return true;
+
+  let j = start - 1;
+  while (j >= 0 && /\s/.test(source[j])) j -= 1;
+  if (source[j] !== "=") return false;
+  j -= 1;
+  while (j >= 0 && /\s/.test(source[j])) j -= 1;
+  if (!/[A-Za-z0-9_$]/.test(source[j] ?? "")) return false;
+  while (j >= 0 && /[A-Za-z0-9_$]/.test(source[j])) j -= 1;
+  while (j >= 0 && /\s/.test(source[j])) j -= 1;
+  return source[j] === "(" || source[j] === "," || source[j] === "{";
+}
+
+function skipSpace(source: string, i: number): number {
+  while (i < source.length && /\s/.test(source[i])) i += 1;
+  return i;
+}
+
 function referencedEnv(source: string): Array<{ name: string; index: number }> {
   const found: Array<{ name: string; index: number }> = [];
   const re = /(?:process\.env|import\.meta\.env)(?:\.([A-Z_][A-Z0-9_]*)|\[\s*['"]([A-Z_][A-Z0-9_]*)['"]\s*\])/g;
@@ -208,7 +247,10 @@ function referencedEnv(source: string): Array<{ name: string; index: number }> {
     while ((match = re.exec(span.text))) {
       const name = match[1] || match[2];
       if (!name) continue;
-      found.push({ name, index: span.start + match.index });
+      const absStart = span.start + match.index;
+      const absEnd = absStart + match[0].length;
+      if (isOptionalEnv(source, absStart, absEnd)) continue;
+      found.push({ name, index: absStart });
     }
   }
   return found;

@@ -20,6 +20,7 @@ describe("leaked-secrets", () => {
       expect(found?.findings.map((item) => item.file).sort()).toEqual([
         ".env",
         ".env.example",
+        ".gitignore",
         "src/App.tsx",
         "src/lib/supabase.ts",
         "src/lib/supabase.ts",
@@ -47,6 +48,22 @@ describe("leaked-secrets", () => {
       expect(again.totals.filesChanged).toBe(0);
     });
   });
+
+  it("treats Next.js server modules as server code and warns when .gitignore misses .env", async () => {
+    await withTemp(async (dir) => {
+      await writeProject(dir, {
+        "package.json": JSON.stringify({ dependencies: { next: "14.2.0" } }),
+        "app/debug/page.tsx": "export default function Page() { return process.env.SUPABASE_SERVICE_ROLE_KEY; }\n",
+        "app/shop/route.ts": "export function GET() { return process.env.SUPABASE_SERVICE_ROLE_KEY; }\n",
+        "app/widget/page.tsx": "\"use client\";\nexport default function Page() { return process.env.SUPABASE_SERVICE_ROLE_KEY; }\n",
+      });
+      const report = await run({ root: dir, mode: "scan", ruleId: "leaked-secrets" });
+      const files = rule(report, "leaked-secrets")?.findings.map((item) => item.file).sort();
+      expect(files).toEqual([".gitignore", "app/widget/page.tsx"]);
+      const warning = rule(report, "leaked-secrets")?.findings.find((item) => item.file === ".gitignore");
+      expect(warning?.severity).toBe("warning");
+    });
+  });
 });
 
 describe("supabase-rls", () => {
@@ -55,12 +72,13 @@ describe("supabase-rls", () => {
       const report = await run({ root: dir, mode: "scan", ruleId: "supabase-rls" });
       const messages = rule(report, "supabase-rls")?.findings.map((item) => item.message).join("\n") ?? "";
       expect(messages).toContain("public.notes");
-      expect(messages).toContain("public.audit_log");
       expect(messages).toContain("public.legacy_flags");
       expect(messages).toContain('public."Notes"');
       expect(messages).toContain("public.widgets");
+      expect(messages).not.toContain("public.audit_log");
       expect(messages).not.toContain("public.profiles");
       expect(messages).not.toContain("internal.secrets");
+      expect(messages).not.toContain("discarded_goals");
       const fixed = await fixProject(dir);
       expect(fixed.ok).toBe(true);
       const files = await readdir(join(dir, "supabase/migrations"));
@@ -73,6 +91,7 @@ describe("supabase-rls", () => {
       expect(sql).toContain("does not connect to a database");
       expect(sql).toContain("public.notes");
       expect(sql).not.toContain("public.profiles ENABLE");
+      expect(sql).not.toContain("audit_log");
       const again = await run({ root: dir, mode: "scan" });
       expect(again.ok).toBe(true);
     });
@@ -118,6 +137,24 @@ describe("missing-env", () => {
       const report = await run({ root: dir, mode: "scan", ruleId: "missing-env" });
       const names = rule(report, "missing-env")?.findings.map((item) => item.meta?.name);
       expect(names).toEqual(["WIDGET_KEY"]);
+    });
+  });
+
+  it("does not fail on ||, ??, or a default parameter", async () => {
+    await withTemp(async (dir) => {
+      await writeProject(dir, {
+        "package.json": JSON.stringify({ scripts: { dev: "vite" } }),
+        "src/config.ts": [
+          "export const required = process.env.REQUIRED_TOKEN;",
+          "export const fallback = process.env.OPTIONAL_TOKEN || \"local\";",
+          "export const nil = import.meta.env.VITE_OPTIONAL ?? \"\";",
+          "export const site = process.env.SITE_URL?.trim() || \"https://example.com\";",
+          "export function run(port = process.env.PORT_DEFAULT) { return port; }",
+        ].join("\n"),
+      });
+      const report = await run({ root: dir, mode: "scan", ruleId: "missing-env" });
+      const names = rule(report, "missing-env")?.findings.map((item) => item.meta?.name);
+      expect(names).toEqual(["REQUIRED_TOKEN"]);
     });
   });
 });
@@ -186,6 +223,29 @@ describe("hardcoded-localhost", () => {
       expect(await text(dir, ".env.example")).toContain("VITE_API_BASE_URL=http://localhost:3000");
       expect(await text(dir, ".env.example")).toContain("VITE_SUPABASE_URL=http://localhost:54321");
       expect((await run({ root: dir, mode: "scan" })).ok).toBe(true);
+    });
+  });
+
+  it("ignores dev-only and placeholder URLs and flags a bare host", async () => {
+    await withTemp(async (dir) => {
+      await writeProject(dir, {
+        "package.json": JSON.stringify({ dependencies: { vite: "^6.0.0" } }),
+        "src/api.ts": [
+          "export const live = \"http://localhost:4000\";",
+          "const preview = import.meta.env.DEV ? \"http://localhost:3000\" : \"\";",
+          "export const field = { placeholder: \"http://127.0.0.1:8080\" };",
+          "export const host = \"localhost:5173\";",
+          "const origins = dev ? ['https://example.com', 'http://localhost:9'] : ['https://example.com'];",
+          "void preview; void field; void origins;",
+        ].join("\n"),
+        "src/vite.config.ts": "export const target = \"http://localhost:3000\";\n",
+      });
+      const report = await run({ root: dir, mode: "scan", ruleId: "hardcoded-localhost" });
+      const values = rule(report, "hardcoded-localhost")?.findings.map((item) => item.message);
+      expect(values).toEqual([
+        "Hardcoded http://localhost:4000 in src/api.ts.",
+        "Hardcoded localhost:5173 in src/api.ts.",
+      ]);
     });
   });
 });

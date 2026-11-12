@@ -24,7 +24,7 @@ export const supabaseRls: Strategy = {
     return {
       id: "supabase-rls",
       title: "Supabase tables without row level security",
-      description: "Public tables created in SQL anywhere in the repo need row level security before a client can safely touch them.",
+      description: "Public tables created in active SQL need row level security. RLS that is already enabled is enough, even with no policy. Discarded and backup SQL is ignored.",
       severity: "error",
       scopeNote: "Writes a SQL migration only. It never connects to Postgres or Supabase.",
       strategy: "supabase-rls",
@@ -51,6 +51,7 @@ function createRule(def: RuleDefinition): Rule {
       const files = (await ctx.glob(globs)).sort();
       const tables = new Map<string, TableState>();
       for (const file of files) {
+        if (isInactiveSql(file)) continue;
         const sql = await ctx.read(file);
         for (const hit of scanSql(stripSqlComments(sql))) {
           const state = tables.get(hit.ident.key) ?? {
@@ -127,9 +128,22 @@ function createRule(def: RuleDefinition): Rule {
 function problemFor(state: TableState): string | null {
   if (state.rls === "disabled") return "disabled";
   if (state.created && state.rls !== "enabled") return "missing-rls";
-  if ((state.created || state.rls === "enabled") && state.policies === 0 && state.rls === "enabled") return "no-policy";
-  if (state.created && state.rls === "enabled" && state.policies === 0) return "no-policy";
   return null;
+}
+
+function isInactiveSql(file: string): boolean {
+  return file
+    .toLowerCase()
+    .split("/")
+    .some(
+      (part) =>
+        part === "discarded" ||
+        part === "backup" ||
+        part === "backups" ||
+        part === "archive" ||
+        part === "archived" ||
+        part.includes("discarded"),
+    );
 }
 
 function messageFor(sql: string, problem: string): string {

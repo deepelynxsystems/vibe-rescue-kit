@@ -259,38 +259,37 @@ Shallow clones hide secrets that were committed and later deleted. `npm install`
 
 ## Re-test after fixes
 
-The same 15 clones, at the same commits listed above, were scanned again with this branch built locally (`npm run build`, then `node dist/cli.js scan --json`). That binary reports version 1.0.1. `fix` was not run. No issues, comments, or pushes were made on the scanned repos. Secret values are still not copied. PR #6 stays the 1.0.0 baseline; this section is only the 1.0.1 re-test.
+The same 15 clones, at the same commits listed above, were scanned with this branch built locally (`npm run build`, then `node dist/cli.js scan --json`). The binary is version 1.0.1. `fix` was not run. No issues, comments, or pushes were made on the scanned repos. Secret values are not copied. PR #6 stays the 1.0.0 baseline.
 
-`ripplesocial` is now clean (exit 0). Every other repo still exits 1. No rule threw. The slowest scan was 0.72s (`app.ux`).
+Every repo still exits 1, including `ripplesocial`, because a `.gitignore` warning is a finding. No rule threw. The slowest scan was 0.71s (`app.ux`).
 
-| | 1.0.0 | 1.0.1 |
+| | 1.0.0 | final 1.0.1 |
 | --- | --- | --- |
-| Findings | 245 | 153 |
-| True positives | 80 | 78 |
-| False positives | 121 | 27 |
-| Unclear | 44 | 48 |
+| Findings | 245 | 89 |
+| True positives | 80 | 71 |
+| False positives | 121 | 1 |
+| Unclear | 44 | 17 |
 | Crashes | 0 | 0 |
 
-The true-positive count fell by 2 even though new real hits appeared. `spa-rewrites` used to emit three findings for one missing fallback. Those extra host files were counted as true positives. One finding per app is the right count, so 10 of the old true positives were duplicates. The re-test also picked up problems 1.0.0 missed: the nested HowLow SPA, its Supabase env names, three `NEXT_PUBLIC_*` names in `quick-chat-react`'s Next demo, and three `public` tables in `app.ux` created with row level security never enabled.
+Of the 89 findings, 76 are errors and 13 are warnings. The warnings are all `.gitignore` holes. The true-positive count is lower than 1.0.0 because one missing SPA fallback is one finding, optional env reads are not failures, and "RLS enabled, no policy" is not a finding. New true positives that 1.0.0 missed: the nested HowLow SPA, bare `localhost:3000` in the v0 multi-tenant example, three `public` tables in `app.ux` with row level security never enabled, and gitignore files that do not cover `.env`.
 
-### Before / after by rule
+### 1.0.0 vs final 1.0.1 by rule
 
 Counts are true positive / false positive / unclear.
 
-| Rule | 1.0.0 | 1.0.1 | What changed |
+| Rule | 1.0.0 | final 1.0.1 | What changed |
 | --- | --- | --- | --- |
-| `import-paths` | 5 / 85 / 0 | 5 / 0 / 0 | The 85 false positives are gone: workspace packages, strings, comments, JSDoc `import()`, and the Deno `npm:` specifier. The five real undeclared imports remain (`@tiptap/core`, `lodash`, `server-only`, `zod`, `axe-playwright`). |
-| `missing-env` | 55 / 24 / 43 | 59 / 0 / 44 | Names already in an example file no longer fail when `.env` is absent (13 false positives). `VERCEL_*`, proxy variables, and `REPL_ID` are ignored (11 false positives on `app.ux`). Nested reads are visible: HowLow's `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, and three `NEXT_PUBLIC_*` names in `nextjs-demo`. `LOG_LEVEL` in the HowLow API server defaults to `info` and is unclear. |
-| `spa-rewrites` | 16 / 6 / 0 | 7 / 0 / 0 | A Netlify `/*` → `/index.html` 200 redirect clears AcademiComeback and ResumeSharp. Apps with no fallback produce one finding, not three. `artifacts/howlow` is now reported. |
-| `supabase-rls` | 0 / 0 / 0 | 3 / 21 / 3 | `scripts/*.sql` is scanned. `public.fx_rates`, `public.auditor_plans`, and `public.auditor_marketing_links` are true positives (created, RLS never enabled). Twenty-one `app.ux` tables have RLS enabled and no policy; Postgres already denies anon and authenticated, so those are false positives. Three hits are only in AcademiComeback's `.bolt/supabase_discarded_migrations` and are unclear. |
-| `leaked-secrets` | 3 / 1 / 0 | 3 / 1 / 0 | Unchanged. Not part of this fix. |
-| `hardcoded-localhost` | 1 / 4 / 1 | 1 / 4 / 1 | Unchanged. Not part of this fix. |
-| `webhook-signature` | 0 / 1 / 0 | 0 / 1 / 0 | Unchanged. Not part of this fix. |
+| `import-paths` | 5 / 85 / 0 | 5 / 0 / 0 | Workspace packages, strings, comments, JSDoc `import()`, and Deno `npm:` specifiers are quiet. The five undeclared imports remain. |
+| `missing-env` | 55 / 24 / 43 | 35 / 0 / 16 | Example files satisfy a fresh clone. Platform variables are ignored. `\|\|`, `??`, `?.trim() \|\|`, and default parameters are not failures. 16 reads are still unclear: flags compared with `=== "true"` and helpers such as `boundedEnvInt(env, 200)` that hide the default in a call. |
+| `spa-rewrites` | 16 / 6 / 0 | 7 / 0 / 0 | One existing host fallback is enough. `artifacts/howlow` is reported. AcademiComeback and ResumeSharp are quiet because Netlify already rewrites. |
+| `supabase-rls` | 0 / 0 / 0 | 3 / 0 / 0 | Active SQL is scanned, including `scripts/*.sql`. `public.fx_rates`, `public.auditor_plans`, and `public.auditor_marketing_links` have no `ENABLE ROW LEVEL SECURITY`. RLS with zero policies is not a finding. Bolt's discarded migration folder is skipped. |
+| `leaked-secrets` | 3 / 1 / 0 | 16 / 0 / 0 | The Next.js server-component false positive is gone. 13 warnings are gitignore files that do not ignore `.env` or `.env.development` / `.env.production`. 3 errors are tracked `.env` files (`airpsx-frontend`, `classnoteco`). |
+| `hardcoded-localhost` | 1 / 4 / 1 | 5 / 1 / 1 | Dev branches, placeholders, and dev configs are ignored. Bare `localhost:3000` is now 4 true positives in the v0 multi-tenant example. gptme's VNC iframe is a true positive. Its preview default URL is the remaining false positive, and `DEFAULT_API_URL` is unclear. |
+| `webhook-signature` | 0 / 1 / 0 | 0 / 0 / 0 | The Vow route is quiet. It verifies HMAC with `timingSafeEqual` and never imports Stripe. |
 
-### Remaining weaknesses
+### What is still rough
 
-- **`supabase-rls` still treats "RLS on, zero policies" as a bug.** On `app.ux` that is 21 of 24 RLS findings. A table with row level security and no policy already returns no rows to `anon` and `authenticated`. The same pass also reads Bolt's discarded migration folder, which is not applied.
-- **`leaked-secrets` still treats `app/**` as client code** unless the path is `app/api` or `*.server.*`. `app/debug/env/page.tsx` is a server component that masks the service-role key. The rule also stays quiet when `.gitignore` does not ignore `.env` until that file already exists (`dandi`, `gptme-webui`, `learnhub-unlocked-academy`, `howlow-auction`, and a bare `.env` in `app.ux`).
-- **`webhook-signature` still matches the substring `stripe`.** The Vow billing route verifies HMAC with `timingSafeEqual` and only mentions `stripe-signature` as one accepted header name.
-- **`hardcoded-localhost` still flags dev-only and placeholder URLs** (ResumeSharp's `import.meta.env.DEV` branch, the Lovable editor allowlist, gptme preview defaults) and still misses a bare `localhost:3000` host with no scheme in the v0 multi-tenant example.
-- **`missing-env` still lists optional flags that already have a code default.** That is 44 of the unclear findings, 39 of them in `app.ux`. A name in any `.env.example` in the repo satisfies every package, so `quick-chat-react`'s root `VITE_SUPABASE_URL` is quiet because `demo/.env.example` documents it, while `VITE_SUPABASE_PUBLISHABLE_KEY` in the same file is still reported.
+- **`missing-env` does not see a default that is not `||`, `??`, or a default parameter.** `process.env.FLAG === "true"` and `boundedEnvInt(process.env.LIMIT, 200)` still fail the scan. That is the 16 unclear findings, 14 of them in `app.ux`. A name that is optional in one file and bare in another is still an error.
+- **`hardcoded-localhost` still flags a default preview URL** in `gptme-webui` (`BrowserPreview` `defaultUrl`) and the local-agent `DEFAULT_API_URL`. Those are product defaults, not a dev-only branch.
+- **The gitignore warning is strict.** Ignoring only `.env` still warns about `.env.development` and `.env.production`. That is a real hole, and it also means a project with no other problems exits 1. `airpsx-frontend` and `classnoteco` get both the warning and an error for the tracked file.
+- **Anon Supabase JWTs in client source are still out of scope**, which matches the rule. `learnhub-unlocked-academy` still hardcodes one and produces no secret finding.

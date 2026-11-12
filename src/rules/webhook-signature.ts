@@ -18,7 +18,7 @@ export const webhookSignature: Strategy = {
     return {
       id: "webhook-signature",
       title: "Unverified Stripe webhooks",
-      description: "A Stripe webhook that trusts the JSON body can be forged. Verify the stripe-signature header with constructEvent.",
+      description: "A Stripe webhook that trusts the JSON body can be forged. constructEvent or an HMAC check (timingSafeEqual / createHmac) counts as verification. The word stripe alone does not.",
       severity: "error",
       scopeNote: "Adds a signature-check scaffold and env names. It does not call Stripe and does not invent a webhook secret.",
       strategy: "webhook-signature",
@@ -97,10 +97,18 @@ function createRule(def: RuleDefinition): Rule {
 }
 
 export function looksUnverified(file: string, source: string): boolean {
-  if (!/\bstripe\b/i.test(source)) return false;
+  if (!isStripeWebhook(file, source)) return false;
+  return !hasSignatureVerification(source);
+}
+
+function isStripeWebhook(file: string, source: string): boolean {
   const named = /webhook/i.test(file) || /["'`][^"'`\n]*webhook[^"'`\n]*["'`]/i.test(source);
   if (!named) return false;
-  return !/constructEvent|readVerifiedStripeEvent/.test(source);
+  return /\bfrom\s+["']stripe["']|\brequire\(\s*["']stripe["']\s*\)|\bnew\s+Stripe\b|\bstripe\.webhooks\b/.test(source);
+}
+
+function hasSignatureVerification(source: string): boolean {
+  return /constructEvent|readVerifiedStripeEvent|\btimingSafeEqual\b|\bcreateHmac\b/.test(source);
 }
 
 export function transformWebhookSource(source: string, ts: boolean): { code: string; notes: string[] } | null {
