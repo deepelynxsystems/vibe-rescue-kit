@@ -12,14 +12,22 @@
 **vibe-rescue-kit** fixes the failures that show up after a weekend with Lovable, Bolt, Cursor, Replit, or v0. It is a local CLI for Vite, React, and Next.js projects that also use Supabase. Each problem is a rule with three parts: **detect**, **fix**, and **verify**. A fix is kept only when verification passes. Otherwise the files are restored and the report says why.
 
 ```bash
-npm ci
-npm run build
-node dist/cli.js scan
-node dist/cli.js fix --dry-run
-node dist/cli.js fix --yes
+npm install --save-dev vibe-rescue-kit
+npx vibe-rescue scan
+npx vibe-rescue fix --dry-run
+npx vibe-rescue fix --yes
 ```
 
-This repository is the source. Run it from a clone, or in CI with the [GitHub Action](#use-as-a-github-action). It is not installed from the npm registry.
+The package is on npm. The command is `vibe-rescue`. Node.js 20 or newer.
+
+A one-off run, without adding the dependency:
+
+```bash
+npx vibe-rescue-kit scan /path/to/your-app
+npx vibe-rescue-kit fix /path/to/your-app --yes
+```
+
+The GitHub Action still builds this repository and runs `node dist/cli.js`. It does not install the kit from npm.
 
 Built by [deepelynx](https://deepelynx.com).
 
@@ -56,7 +64,17 @@ Every auto-fix is reversible:
 
 Exit codes: `0` clean or every fix verified, `1` findings remain or a fix was rolled back, `2` usage error or confirmation required.
 
-## Run it locally
+## Install
+
+Node.js 20 or newer.
+
+```bash
+npm install --save-dev vibe-rescue-kit
+npx vibe-rescue scan /path/to/your-app
+npx vibe-rescue fix /path/to/your-app --yes
+```
+
+To work on this repository itself:
 
 ```bash
 npm ci
@@ -64,8 +82,6 @@ npm run build
 node dist/cli.js scan /path/to/your-app
 node dist/cli.js fix /path/to/your-app --yes
 ```
-
-Node.js 20 or newer.
 
 ## Commands
 
