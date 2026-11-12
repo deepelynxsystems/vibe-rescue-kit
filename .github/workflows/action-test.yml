@@ -1,0 +1,198 @@
+name: Action test
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clean project passes
+        id: clean
+        uses: ./
+        with:
+          path: fixtures/action-clean
+          mode: scan
+          fail-on-findings: true
+
+      - name: Assert the clean project
+        env:
+          COUNT: ${{ steps.clean.outputs.findings-count }}
+          REPORT: ${{ steps.clean.outputs.report-path }}
+          SUMMARY: ${{ steps.clean.outputs.summary }}
+        run: |
+          set -euo pipefail
+          echo "$SUMMARY"
+          test "$COUNT" = "0"
+          test -f "$REPORT"
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const report = JSON.parse(readFileSync(process.env.REPORT, "utf8"));
+            if (report.ok !== true) process.exit(1);
+            if (report.totals.findings !== 0) process.exit(1);
+            if (report.results.length !== 0) process.exit(1);
+          '
+          grep -F -q "0 open findings" <<<"$SUMMARY"
+          grep -F -q "No problems found" vibe-rescue-summary.md
+
+      - name: Dirty project is detected
+        id: dirty
+        uses: ./
+        with:
+          path: fixtures/action-dirty
+          mode: scan
+          fail-on-findings: false
+          format: json
+
+      - name: Assert the dirty findings
+        env:
+          COUNT: ${{ steps.dirty.outputs.findings-count }}
+          REPORT: ${{ steps.dirty.outputs.report-path }}
+          SUMMARY: ${{ steps.dirty.outputs.summary }}
+        run: |
+          set -euo pipefail
+          echo "$SUMMARY"
+          test "$COUNT" = "3"
+          test -f "$REPORT"
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const report = JSON.parse(readFileSync(process.env.REPORT, "utf8"));
+            const ids = report.results.map((result) => result.ruleId).sort();
+            const expected = ["demo-warning", "hardcoded-localhost", "leaked-secrets"];
+            if (JSON.stringify(ids) !== JSON.stringify(expected)) {
+              console.error(ids);
+              process.exit(1);
+            }
+            if (report.totals.findings !== 3) process.exit(1);
+            if (report.ok !== false) process.exit(1);
+          '
+          grep -F -q "leaked-secrets" vibe-rescue-summary.md
+          grep -F -q "hardcoded-localhost" vibe-rescue-summary.md
+          if grep -F -q "sk_test_NOTAREALKEY12345" "$REPORT" vibe-rescue-summary.md; then
+            echo "report or job summary contains the fixture secret"
+            exit 1
+          fi
+
+      - name: Error threshold ignores the warning
+        id: errors-only
+        uses: ./
+        with:
+          path: fixtures/action-dirty
+          severity: error
+          fail-on-findings: false
+
+      - name: Assert the severity threshold
+        env:
+          COUNT: ${{ steps.errors-only.outputs.findings-count }}
+          REPORT: ${{ steps.errors-only.outputs.report-path }}
+        run: |
+          set -euo pipefail
+          test "$COUNT" = "2"
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const report = JSON.parse(readFileSync(process.env.REPORT, "utf8"));
+            const ids = report.results.map((result) => result.ruleId);
+            if (!ids.includes("demo-warning")) process.exit(1);
+            if (!ids.includes("leaked-secrets")) process.exit(1);
+            if (!ids.includes("hardcoded-localhost")) process.exit(1);
+          '
+
+      - name: A warning does not fail an error threshold
+        id: warning-only
+        uses: ./
+        with:
+          path: fixtures/action-dirty
+          rules: demo-warning
+          severity: error
+          fail-on-findings: true
+
+      - name: Assert the warning was below the threshold
+        env:
+          COUNT: ${{ steps.warning-only.outputs.findings-count }}
+        run: |
+          set -euo pipefail
+          test "$COUNT" = "0"
+
+      - name: One rule limits the scan
+        id: one-rule
+        uses: ./
+        with:
+          path: fixtures/action-dirty
+          rules: hardcoded-localhost
+          fail-on-findings: false
+
+      - name: Assert a single rule
+        env:
+          COUNT: ${{ steps.one-rule.outputs.findings-count }}
+          REPORT: ${{ steps.one-rule.outputs.report-path }}
+        run: |
+          set -euo pipefail
+          test "$COUNT" = "1"
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const report = JSON.parse(readFileSync(process.env.REPORT, "utf8"));
+            const ids = report.results.map((result) => result.ruleId);
+            if (JSON.stringify(ids) !== JSON.stringify(["hardcoded-localhost"])) {
+              console.error(ids);
+              process.exit(1);
+            }
+          '
+
+      - name: Dirty project fails the check
+        id: gate
+        continue-on-error: true
+        uses: ./
+        with:
+          path: fixtures/action-dirty
+          mode: scan
+          fail-on-findings: true
+
+      - name: Assert fail-on-findings
+        env:
+          OUTCOME: ${{ steps.gate.outcome }}
+          COUNT: ${{ steps.gate.outputs.findings-count }}
+          SUMMARY: ${{ steps.gate.outputs.summary }}
+        run: |
+          set -euo pipefail
+          echo "outcome=$OUTCOME count=$COUNT"
+          echo "$SUMMARY"
+          test "$OUTCOME" = "failure"
+          test "$COUNT" = "3"
+          grep -F -q "3 open findings" <<<"$SUMMARY"
+
+      - name: Fix mode clears the dirty project
+        id: fixed
+        uses: ./
+        with:
+          path: fixtures/action-dirty
+          mode: fix
+          fail-on-findings: true
+
+      - name: Assert the fix
+        env:
+          COUNT: ${{ steps.fixed.outputs.findings-count }}
+          REPORT: ${{ steps.fixed.outputs.report-path }}
+          SUMMARY: ${{ steps.fixed.outputs.summary }}
+        run: |
+          set -euo pipefail
+          echo "$SUMMARY"
+          test "$COUNT" = "0"
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const report = JSON.parse(readFileSync(process.env.REPORT, "utf8"));
+            if (report.ok !== true) {
+              console.error(JSON.stringify(report.results, null, 2));
+              process.exit(1);
+            }
+            if (report.mode !== "fix") process.exit(1);
+            if (report.totals.rolledBack !== 0) process.exit(1);
+          '
+          if grep -F -q "sk_test_NOTAREALKEY12345" "$REPORT" vibe-rescue-summary.md; then
+            echo "report or job summary contains the fixture secret"
+            exit 1
+          fi

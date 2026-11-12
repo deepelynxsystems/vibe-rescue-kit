@@ -1,53 +1,81 @@
-name: vibe-rescue
-description: Detect and safely auto-fix common AI vibe-coding failures
+name: vibe-rescue-kit
+description: Detect and safely auto-fix common AI vibe-coding failures. A fix that fails verification is rolled back.
 author: deepelynx
 branding:
   icon: shield
   color: orange
+
 inputs:
-  mode:
-    description: scan fails when problems exist. fix applies verified fixes.
-    required: false
-    default: scan
-  rule:
-    description: Limit the run to one rule id.
-    required: false
-    default: ""
-  working-directory:
-    description: Project directory, relative to the repository root.
+  path:
+    description: Directory to scan, relative to the workflow workspace. Absolute paths are accepted.
     required: false
     default: "."
+  rules:
+    description: Comma-separated rule ids. Empty runs every built-in rule plus project rules in .vibe-rescue/rules.
+    required: false
+    default: ""
+  mode:
+    description: "scan reports problems. fix applies each fix and rolls it back when verification fails."
+    required: false
+    default: scan
+  fail-on-findings:
+    description: Fail the step when an open finding meets the severity threshold, or a rule errors.
+    required: false
+    default: "true"
+  severity:
+    description: "Minimum severity that counts. warning includes warnings and errors. error counts only errors."
+    required: false
+    default: warning
+  format:
+    description: "text prints a summary in the log. json prints the report. The report file is always JSON."
+    required: false
+    default: text
+
+outputs:
+  findings-count:
+    description: Open findings at or above the severity threshold. A verified fix is not open.
+    value: ${{ steps.run.outputs.findings-count }}
+  report-path:
+    description: Absolute path of the JSON report written to the workspace.
+    value: ${{ steps.run.outputs.report-path }}
+  summary:
+    description: One-line result, also written to the job summary.
+    value: ${{ steps.run.outputs.summary }}
+
 runs:
   using: composite
   steps:
-    - name: Prepare vibe-rescue-kit
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    - name: Build vibe-rescue-kit
       shell: bash
-      env:
-        ACTION_PATH: ${{ github.action_path }}
+      working-directory: ${{ github.action_path }}
       run: |
         set -euo pipefail
-        if [ ! -f "$ACTION_PATH/dist/cli.js" ]; then
-          npm --prefix "$ACTION_PATH" ci
-          npm --prefix "$ACTION_PATH" run build
+        if [ ! -f dist/cli.js ]; then
+          npm ci
+          npm run build
         fi
+
     - name: Run vibe-rescue
+      id: run
       shell: bash
-      working-directory: ${{ inputs.working-directory }}
       env:
         ACTION_PATH: ${{ github.action_path }}
-        MODE: ${{ inputs.mode }}
-        RULE: ${{ inputs.rule }}
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_RULES: ${{ inputs.rules }}
+        INPUT_MODE: ${{ inputs.mode }}
+        INPUT_FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
+        INPUT_SEVERITY: ${{ inputs.severity }}
+        INPUT_FORMAT: ${{ inputs.format }}
+      run: node "$ACTION_PATH/scripts/github-action.mjs"
+
+    - name: Fail on findings
+      if: steps.run.outputs.fail == 'true'
+      shell: bash
       run: |
-        set -euo pipefail
-        case "$MODE" in
-          scan|fix|watch) ;;
-          *) echo "mode must be scan, fix, or watch" >&2; exit 2 ;;
-        esac
-        args=("$MODE")
-        if [ "$MODE" = "fix" ] || [ "$MODE" = "watch" ]; then
-          args+=("--yes")
-        fi
-        if [ -n "$RULE" ]; then
-          args+=("--rule" "$RULE")
-        fi
-        node "$ACTION_PATH/dist/cli.js" "${args[@]}"
+        echo "vibe-rescue found problems at or above the severity threshold."
+        exit 1
