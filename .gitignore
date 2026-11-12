@@ -1,5 +1,6 @@
 node_modules/
 dist/
+*.tgz
 vibe-rescue-report.json
 vibe-rescue-summary.md
 coverage/

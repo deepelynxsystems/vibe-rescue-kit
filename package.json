@@ -1,6 +1,6 @@
 {
   "name": "vibe-rescue-kit",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Automatic, reversible fixes for the failures AI vibe-coding tools leave behind.",
   "type": "module",
   "bin": {
@@ -16,9 +16,9 @@
   },
   "files": [
     "dist",
+    "!dist/**/*.map",
     "rules",
     "templates",
-    "action.yml",
     "README.md",
     "LICENSE"
   ],
@@ -52,7 +52,8 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "demo": "bash scripts/demo.sh",
-    "prepublishOnly": "npm run build && npm test"
+    "prepack": "npm run build",
+    "prepublishOnly": "npm test"
   },
   "dependencies": {
     "chalk": "^5.6.2",
