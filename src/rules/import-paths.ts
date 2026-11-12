@@ -3,7 +3,7 @@ import { readdirSync } from "node:fs";
 import { extname, join, normalize, sep } from "node:path";
 import type { Finding, Rule, RuleDefinition } from "../types.js";
 import { defineRule, verifyFixed } from "../engine/define.js";
-import { addDependency, readPackage, writePackageIfChanged } from "../engine/package-file.js";
+import { addDependency, stringifyPackage } from "../engine/package-file.js";
 import { extractSpecifiers } from "../engine/text.js";
 import type { Strategy } from "./types.js";
 
@@ -17,7 +17,7 @@ export const importPaths: Strategy = {
     return {
       id: "import-paths",
       title: "Broken imports and missing dependencies",
-      description: "Fix import specifiers whose path casing does not match the file, and add imported packages that are missing from package.json.",
+      description: "Fix import specifiers whose path casing does not match the file, and add imported packages that are missing from the nearest package.json.",
       severity: "error",
       scopeNote: "Does not run npm install. Added dependencies use * so the package manager can resolve a version.",
       strategy: "import-paths",
@@ -39,14 +39,16 @@ function createRule(def: RuleDefinition): Rule {
     scopeNote: def.scopeNote,
     watchGlobs: def.watchGlobs ?? GLOBS,
     async detect(ctx) {
-      const aliases = await aliasPrefixes(ctx);
-      const pkg = await readPackage(ctx);
-      const have = pkg ? dependencyNames(pkg.json) : new Set<string>();
+      const packages = await ctx.glob(["**/package.json"]);
+      const aliasMap = await aliasMapFor(ctx);
+      const depCache = new Map<string, Set<string>>();
       const findings: Finding[] = [];
       const seenPackages = new Set<string>();
       for (const file of await ctx.glob(GLOBS)) {
         if (file.endsWith(".d.ts")) continue;
         const text = await ctx.read(file);
+        const aliases = aliasesFor(file, aliasMap);
+        const pkgFile = owningPackage(file, packages);
         for (const hit of extractSpecifiers(text)) {
           if (hit.spec.startsWith(".")) {
             const resolved = correctRelative(ctx.root, file, hit.spec);
@@ -74,18 +76,22 @@ function createRule(def: RuleDefinition): Rule {
             }
             continue;
           }
-          if (aliases.some((prefix) => hit.spec.startsWith(prefix))) continue;
+          if (aliases.some((prefix) => hit.spec === prefix || hit.spec.startsWith(prefix))) continue;
           const name = packageName(hit.spec);
-          if (!name || seenPackages.has(name) || have.has(name)) continue;
-          seenPackages.add(name);
+          if (!name) continue;
+          const seenKey = `${pkgFile}:${name}`;
+          if (seenPackages.has(seenKey)) continue;
+          const have = await dependencySet(ctx, pkgFile, depCache);
+          if (have.has(name)) continue;
+          seenPackages.add(seenKey);
           findings.push({
-            fingerprint: `import-paths:package:${name}`,
+            fingerprint: `import-paths:package:${pkgFile}:${name}`,
             ruleId: def.id,
             severity,
-            message: `${file} imports ${name}, which is not in package.json.`,
+            message: `${file} imports ${name}, which is not in ${pkgFile}.`,
             file,
-            hint: `${name} will be added with version *. Run npm install afterwards.`,
-            meta: { kind: "package", packageName: name, dev: name.startsWith("@types/") },
+            hint: `${name} will be added to ${pkgFile} with version *. Run npm install afterwards.`,
+            meta: { kind: "package", packageName: name, packageFile: pkgFile, dev: name.startsWith("@types/") },
           });
         }
       }
@@ -117,25 +123,28 @@ function createRule(def: RuleDefinition): Rule {
       }
 
       const packages = findings.filter((finding) => finding.meta?.kind === "package");
-      if (packages.length > 0) {
-        const pkg = await readPackage(ctx);
+      const byManifest = new Map<string, Finding[]>();
+      for (const finding of packages) {
+        const manifest = String(finding.meta?.packageFile ?? "package.json");
+        const list = byManifest.get(manifest) ?? [];
+        list.push(finding);
+        byManifest.set(manifest, list);
+      }
+      for (const [manifest, group] of byManifest) {
+        const pkg = await readJsonPackage(ctx, manifest);
         const json = pkg?.json ?? {};
         let changed = false;
-        for (const finding of packages) {
+        for (const finding of group) {
           const name = String(finding.meta?.packageName ?? "");
           if (!name) continue;
           if (addDependency(json, name, Boolean(finding.meta?.dev))) {
             changed = true;
-            notes.push(`Added ${name}@* to package.json. Run npm install to fetch it.`);
+            notes.push(`Added ${name}@* to ${manifest}. Run npm install to fetch it.`);
           }
         }
-        if (changed) {
-          if (pkg) await writePackageIfChanged(ctx, { ...pkg, json }, json);
-          else {
-            const { stringifyPackage } = await import("../engine/package-file.js");
-            await ctx.write("package.json", stringifyPackage(json, "  "));
-          }
-        }
+        if (!changed) continue;
+        const next = stringifyPackage(json, pkg?.indent ?? "  ");
+        if (next !== pkg?.raw) await ctx.write(manifest, next);
       }
       return { notes };
     },
@@ -156,29 +165,96 @@ function dependencyNames(json: Record<string, unknown>): Set<string> {
   return names;
 }
 
-async function aliasPrefixes(ctx: { readMaybe(file: string): Promise<string | null> }): Promise<string[]> {
-  const prefixes = new Set<string>(["@/"]);
-  for (const file of ["tsconfig.json", "tsconfig.app.json", "jsconfig.json"]) {
-    const raw = await ctx.readMaybe(file);
-    if (!raw) continue;
+interface JsonPackage {
+  raw: string;
+  json: Record<string, unknown>;
+  indent: string;
+}
+
+async function readJsonPackage(
+  ctx: { readMaybe(file: string): Promise<string | null> },
+  rel: string,
+): Promise<JsonPackage | null> {
+  const raw = await ctx.readMaybe(rel);
+  if (raw == null) return null;
+  try {
+    const json = JSON.parse(raw) as Record<string, unknown>;
+    const indentMatch = raw.match(/\n([ \t]+)"/);
+    return { raw, json, indent: indentMatch?.[1] ?? "  " };
+  } catch {
+    return null;
+  }
+}
+
+async function dependencySet(
+  ctx: { readMaybe(file: string): Promise<string | null> },
+  rel: string,
+  cache: Map<string, Set<string>>,
+): Promise<Set<string>> {
+  const cached = cache.get(rel);
+  if (cached) return cached;
+  const pkg = await readJsonPackage(ctx, rel);
+  const names = pkg ? dependencyNames(pkg.json) : new Set<string>();
+  cache.set(rel, names);
+  return names;
+}
+
+function owningPackage(file: string, packages: string[]): string {
+  const dir = posixDir(file);
+  let best = "package.json";
+  let bestLen = -1;
+  for (const pkg of packages) {
+    const pkgDir = posixDir(pkg);
+    const inside = pkgDir === "" || dir === pkgDir || dir.startsWith(`${pkgDir}/`);
+    if (!inside || pkgDir.length <= bestLen) continue;
+    best = pkg;
+    bestLen = pkgDir.length;
+  }
+  return best;
+}
+
+async function aliasMapFor(ctx: { glob(patterns: string[]): Promise<string[]>; read(file: string): Promise<string> }): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>();
+  const files = await ctx.glob(["**/tsconfig.json", "**/tsconfig.app.json", "**/jsconfig.json"]);
+  for (const file of files) {
+    let raw: string;
+    try {
+      raw = await ctx.read(file);
+    } catch {
+      continue;
+    }
+    const prefixes: string[] = [];
     try {
       const json = JSON.parse(raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1")) as {
         compilerOptions?: { paths?: Record<string, unknown> };
       };
       for (const key of Object.keys(json.compilerOptions?.paths ?? {})) {
         const prefix = key.replace(/\*$/, "");
-        if (prefix && prefix !== "@") prefixes.add(prefix);
+        if (prefix && prefix !== "@") prefixes.push(prefix);
       }
     } catch {
       // A broken tsconfig should not hide real missing packages.
     }
+    const dir = posixDir(file);
+    const existing = map.get(dir) ?? [];
+    map.set(dir, existing.concat(prefixes));
+  }
+  return map;
+}
+
+function aliasesFor(file: string, map: Map<string, string[]>): string[] {
+  const prefixes = new Set<string>(["@/"]);
+  const dir = posixDir(file);
+  for (const [configDir, list] of map) {
+    if (configDir !== "" && dir !== configDir && !dir.startsWith(`${configDir}/`)) continue;
+    for (const prefix of list) prefixes.add(prefix);
   }
   return [...prefixes];
 }
 
 function packageName(spec: string): string | null {
   if (!spec || spec.startsWith(".") || spec.startsWith("/") || spec.startsWith("node:") || spec.startsWith("#")) return null;
-  if (/^(virtual:|bun:|astro:|file:|data:|https?:)/.test(spec)) return null;
+  if (/^(virtual:|bun:|astro:|file:|data:|https?:|npm:|jsr:|deno:)/.test(spec)) return null;
   if (spec.includes("*") || spec.includes("?")) return null;
   if (BUILTINS.has(spec)) return null;
   if (spec.startsWith("@")) {

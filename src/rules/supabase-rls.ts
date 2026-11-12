@@ -16,7 +16,7 @@ interface TableState {
   created: boolean;
 }
 
-const MIGRATION_GLOBS = ["supabase/migrations/**/*.sql", "migrations/**/*.sql", "db/migrations/**/*.sql"];
+const MIGRATION_GLOBS = ["**/*.sql"];
 
 export const supabaseRls: Strategy = {
   id: "supabase-rls",
@@ -24,7 +24,7 @@ export const supabaseRls: Strategy = {
     return {
       id: "supabase-rls",
       title: "Supabase tables without row level security",
-      description: "Tables created in migrations need RLS enabled and a policy before a client can safely touch them.",
+      description: "Public tables created in SQL anywhere in the repo need row level security before a client can safely touch them.",
       severity: "error",
       scopeNote: "Writes a SQL migration only. It never connects to Postgres or Supabase.",
       strategy: "supabase-rls",
@@ -71,6 +71,7 @@ function createRule(def: RuleDefinition): Rule {
       }
       const findings: Finding[] = [];
       for (const [key, state] of tables) {
+        if (!key.startsWith("public.")) continue;
         const problem = problemFor(state);
         if (!problem) continue;
         findings.push({

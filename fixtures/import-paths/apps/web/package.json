@@ -1,0 +1,6 @@
+{
+  "name": "web",
+  "dependencies": {
+    "left-pad": "^1.3.0"
+  }
+}

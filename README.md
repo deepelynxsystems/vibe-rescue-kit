@@ -130,7 +130,7 @@ The fix moves the value into gitignored `.env`, writes an empty key in `.env.exa
 
 ### supabase-rls
 
-`CREATE TABLE` in `supabase/migrations`, `migrations`, or `db/migrations` with RLS off, RLS disabled, or RLS on and no policy. The state is tracked across migration files in filename order. A comment that mentions `enable row level security` does not count.
+`CREATE TABLE` for a `public` table in any `.sql` file (`scripts/`, `supabase/migrations`, `db/`, and the rest of the tree) with RLS off, RLS disabled, or RLS on and no policy. Tables in other schemas are ignored. The state is tracked across SQL files in filename order. A comment that mentions `enable row level security` does not count.
 
 The fix writes a new migration that enables RLS and adds `vibe_rescue_deny_all` for `anon` and `authenticated` with `USING (false)`. **No database connection is opened.**
 
@@ -138,7 +138,7 @@ The fix writes a new migration that enables RLS and adds `vibe_rescue_deny_all` 
 
 ### missing-env
 
-`process.env.NAME` and `import.meta.env.NAME` (and the bracket form) when `NAME` is missing from `.env.example` or from the local env files. `NODE_ENV`, Vite's `MODE` / `DEV` / `PROD` / `SSR` / `BASE_URL`, and a short built-in skip list are ignored.
+`process.env.NAME` and `import.meta.env.NAME` (and the bracket form) when `NAME` is missing from `.env.example` (or `.env.sample` / `.env.template`, including in a nested app). A documented name is enough when no local env file is in the tree. `NODE_ENV`, Vite's `MODE` / `DEV` / `PROD` / `SSR` / `BASE_URL`, `VERCEL_*`, `NETLIFY_*`, proxy variables, Replit's `REPL_ID`, and a short built-in skip list are ignored. Nested `src/`, `app/`, and `lib/` trees are scanned.
 
 The fix adds the keys (empty) to `.env.example` and `.env`, writes `.vibe-rescue/check-env.mjs`, and wires `predev` / `prestart` when those scripts exist. Empty values still fail the startup check, so `npm run dev` refuses to boot until you fill them in. The rule is satisfied once the names exist in the files.
 
@@ -146,7 +146,7 @@ The fix adds the keys (empty) to `.env.example` and `.env`, writes `.vibe-rescue
 
 ### spa-rewrites
 
-A Vite app with `index.html` and a client router (`react-router-dom`, `wouter`, TanStack Router, and the usual suspects) and no host fallback. Next.js projects are skipped.
+A Vite app with `index.html` and a client router (`react-router-dom`, `wouter`, TanStack Router, and the usual suspects) and no host fallback. One valid fallback is enough: a Vercel rewrite, a Netlify `/*` → `/index.html` 200 redirect, or a `_redirects` rule. Other host files are not required. Nested Vite apps are checked on their own. Next.js projects are skipped.
 
 The fix merges a rewrite into `vercel.json` (existing keys such as `buildCommand` stay), appends a Netlify `[[redirects]]` block, and writes `public/_redirects`. If an `api/` directory exists, the Vercel source excludes `api/`.
 
@@ -160,7 +160,7 @@ The fix merges a rewrite into `vercel.json` (existing keys such as `buildCommand
 
 ### import-paths
 
-Relative imports whose casing does not match the file on disk, and bare imports whose package is missing from `package.json`. Node built-ins, `node:` imports, and `tsconfig` / `jsconfig` path aliases (plus `@/`) are left alone. Ambiguous case matches are reported and not rewritten.
+Relative imports whose casing does not match the file on disk, and bare imports whose package is missing from the nearest `package.json` (a workspace package, not only the repo root). Node built-ins, `node:` / `npm:` / `jsr:` specifiers, and `tsconfig` / `jsconfig` path aliases (plus `@/`) are left alone. Strings, comments, and JSDoc `import()` types are not imports. Ambiguous case matches are reported and not rewritten.
 
 The casing is corrected in the specifier. Missing packages are added as `"*"`. **The package manager is not run.** Run `npm install` afterwards.
 

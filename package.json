@@ -1,6 +1,6 @@
 {
   "name": "vibe-rescue-kit",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Automatic, reversible fixes for the failures AI vibe-coding tools leave behind.",
   "type": "module",
   "bin": {

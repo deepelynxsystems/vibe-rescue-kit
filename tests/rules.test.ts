@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { reportJson, reportText } from "../src/engine/report.js";
 import { run } from "../src/engine/runner.js";
+import { extractSpecifiers } from "../src/engine/text.js";
 import { fixProject, rule, text, withFixture, withTemp } from "./helpers.js";
 
 const SERVICE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UifQ.signature1";
@@ -57,7 +58,9 @@ describe("supabase-rls", () => {
       expect(messages).toContain("public.audit_log");
       expect(messages).toContain("public.legacy_flags");
       expect(messages).toContain('public."Notes"');
+      expect(messages).toContain("public.widgets");
       expect(messages).not.toContain("public.profiles");
+      expect(messages).not.toContain("internal.secrets");
       const fixed = await fixProject(dir);
       expect(fixed.ok).toBe(true);
       const files = await readdir(join(dir, "supabase/migrations"));
@@ -98,13 +101,32 @@ describe("missing-env", () => {
       expect(again.ok).toBe(true);
     });
   });
+
+  it("accepts a documented name when .env is absent and ignores platform variables", async () => {
+    await withTemp(async (dir) => {
+      await writeProject(dir, {
+        "package.json": JSON.stringify({ scripts: { dev: "vite" } }),
+        ".env.example": "VITE_SUPABASE_URL=\n",
+        "src/app.ts": [
+          "export const url = import.meta.env.VITE_SUPABASE_URL;",
+          "export const region = process.env.VERCEL_REGION;",
+          "export const proxy = process.env.HTTPS_PROXY;",
+          "export const repl = process.env.REPL_ID;",
+        ].join("\n"),
+        "apps/web/src/main.ts": "export const key = process.env.WIDGET_KEY;\n",
+      });
+      const report = await run({ root: dir, mode: "scan", ruleId: "missing-env" });
+      const names = rule(report, "missing-env")?.findings.map((item) => item.meta?.name);
+      expect(names).toEqual(["WIDGET_KEY"]);
+    });
+  });
 });
 
 describe("spa-rewrites", () => {
   it("adds host rewrites and preserves existing vercel config", async () => {
     await withFixture("spa-rewrites", async (dir) => {
       const before = await run({ root: dir, mode: "scan", ruleId: "spa-rewrites" });
-      expect(rule(before, "spa-rewrites")?.findings).toHaveLength(3);
+      expect(rule(before, "spa-rewrites")?.findings).toHaveLength(1);
       const fixed = await fixProject(dir);
       expect(fixed.ok).toBe(true);
       const vercel = JSON.parse(await text(dir, "vercel.json")) as { buildCommand: string; rewrites: Array<{ source: string; destination: string }> };
@@ -126,6 +148,23 @@ describe("spa-rewrites", () => {
       });
       const report = await run({ root: dir, mode: "scan", ruleId: "spa-rewrites" });
       expect(rule(report, "spa-rewrites")?.findings ?? []).toHaveLength(0);
+    });
+  });
+
+  it("accepts any one host fallback and still flags a nested SPA with none", async () => {
+    await withTemp(async (dir) => {
+      await writeProject(dir, {
+        "package.json": JSON.stringify({ dependencies: { vite: "^6.0.0", "react-router-dom": "^6.0.0" } }),
+        "index.html": "<div id=\"root\"></div>\n",
+        "src/main.tsx": "export const route = 'BrowserRouter';\n",
+        "netlify.toml": "[[redirects]]\n  from = \"/*\"\n  to = \"/index.html\"\n  status = 200\n",
+        "apps/web/package.json": JSON.stringify({ dependencies: { vite: "^6.0.0", "react-router-dom": "^6.0.0" } }),
+        "apps/web/index.html": "<div id=\"root\"></div>\n",
+        "apps/web/src/main.tsx": "export const route = 'BrowserRouter';\n",
+      });
+      const report = await run({ root: dir, mode: "scan", ruleId: "spa-rewrites" });
+      const files = rule(report, "spa-rewrites")?.findings.map((item) => item.file);
+      expect(files).toEqual(["apps/web/vercel.json"]);
     });
   });
 });
@@ -152,14 +191,36 @@ describe("hardcoded-localhost", () => {
 });
 
 describe("import-paths", () => {
+  it("reads real import specifiers and skips strings, comments, and JSDoc", () => {
+    const source = [
+      "import.meta.env.VITE_X;",
+      "const sample = \"import \";",
+      "// imported from \"not-a-pkg\"",
+      "/** @type {import('postcss-load-config').Config} */",
+      "export const marker = sample.startsWith('import ');",
+      "import { format } from \"date-fns\";",
+      "export { format }",
+      "import { pad } from \"left-pad\"",
+      "const req = require(\"left-pad\");",
+      "void marker; void req; void format;",
+    ].join("\n");
+    expect(extractSpecifiers(source).map((hit) => hit.spec).sort()).toEqual(["date-fns", "left-pad", "left-pad"]);
+  });
+
   it("fixes casing and adds a missing dependency", async () => {
     await withFixture("import-paths", async (dir) => {
       const report = await run({ root: dir, mode: "scan", ruleId: "import-paths" });
       const findings = rule(report, "import-paths")?.findings ?? [];
-      expect(findings.map((item) => item.message).join("\n")).toContain("./components/button");
-      expect(findings.map((item) => item.message).join("\n")).toContain("date-fns");
-      expect(findings.map((item) => item.message).join("\n")).not.toContain("react");
-      expect(findings.map((item) => item.message).join("\n")).not.toContain('"fs"');
+      const messages = findings.map((item) => item.message).join("\n");
+      expect(messages).toContain("./components/button");
+      expect(messages).toContain("date-fns");
+      expect(messages).toContain("untagged-dep");
+      expect(messages).not.toContain("react");
+      expect(messages).not.toContain("left-pad");
+      expect(messages).not.toContain("postcss-load-config");
+      expect(messages).not.toContain("npm:resend");
+      expect(messages).not.toContain('"fs"');
+      expect(findings.filter((item) => item.meta?.kind === "case")).toHaveLength(1);
       const fixed = await fixProject(dir);
       expect(fixed.ok).toBe(true);
       const source = await text(dir, "src/App.tsx");
@@ -168,6 +229,10 @@ describe("import-paths", () => {
       const pkg = JSON.parse(await text(dir, "package.json")) as { dependencies: Record<string, string> };
       expect(pkg.dependencies["date-fns"]).toBe("*");
       expect(pkg.dependencies.react).toBe("^18.3.1");
+      expect(pkg.dependencies["untagged-dep"]).toBeUndefined();
+      const web = JSON.parse(await text(dir, "apps/web/package.json")) as { dependencies: Record<string, string> };
+      expect(web.dependencies["untagged-dep"]).toBe("*");
+      expect(web.dependencies["left-pad"]).toBe("^1.3.0");
       expect((await run({ root: dir, mode: "scan" })).ok).toBe(true);
     });
   });

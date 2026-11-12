@@ -6,15 +6,13 @@ import { codeSpans, lineAt } from "../engine/text.js";
 import { detectConfig, stringArray } from "./config.js";
 import type { Strategy } from "./types.js";
 
-const GLOBS = [
-  "src/**/*.{ts,tsx,js,jsx,mjs,cjs,vue,svelte}",
-  "app/**/*.{ts,tsx,js,jsx,mjs,cjs}",
-  "pages/**/*.{ts,tsx,js,jsx,mjs,cjs}",
-  "server/**/*.{ts,tsx,js,jsx,mjs,cjs}",
-  "lib/**/*.{ts,tsx,js,jsx,mjs,cjs}",
-  "components/**/*.{ts,tsx,js,jsx,mjs,cjs}",
-  "api/**/*.{ts,tsx,js,jsx,mjs,cjs}",
-];
+const CODE_EXT = "{ts,tsx,js,jsx,mjs,cjs,vue,svelte}";
+const CODE_EXT_PLAIN = "{ts,tsx,js,jsx,mjs,cjs}";
+const ROOTS = ["src", "app", "pages", "server", "lib", "components", "api"];
+const GLOBS = ROOTS.flatMap((root) => [
+  `${root}/**/*.${root === "src" ? CODE_EXT : CODE_EXT_PLAIN}`,
+  `**/${root}/**/*.${root === "src" ? CODE_EXT : CODE_EXT_PLAIN}`,
+]);
 
 const SKIP = new Set([
   "NODE_ENV",
@@ -31,7 +29,8 @@ const SKIP = new Set([
   "NEXT_PHASE",
 ]);
 
-const EXAMPLE_FILES = [".env.example", ".env.sample", ".env.template"];
+const EXAMPLE_GLOBS = [".env.example", ".env.sample", ".env.template", "**/.env.example", "**/.env.sample", "**/.env.template"];
+const LOCAL_GLOBS = LOCAL_ENV_NAMES.flatMap((name) => [name, `**/${name}`]);
 
 export const missingEnv: Strategy = {
   id: "missing-env",
@@ -39,7 +38,7 @@ export const missingEnv: Strategy = {
     return {
       id: "missing-env",
       title: "Missing environment variables",
-      description: "Env vars referenced in code need a documented name and a startup check that fails clearly when they are unset.",
+      description: "Env vars referenced in code need a documented name. A name in .env.example is enough when no local env file exists. Platform variables are ignored.",
       severity: "error",
       scopeNote: "Does not invent secret values. Empty keys are written so the startup check keeps failing until you fill them in.",
       strategy: "missing-env",
@@ -70,25 +69,18 @@ function createRule(def: RuleDefinition): Rule {
       for (const file of await ctx.glob(globs)) {
         const text = await ctx.read(file);
         for (const ref of referencedEnv(text)) {
-          if (skip.has(ref.name) || refs.has(ref.name)) continue;
+          if (skip.has(ref.name) || isPlatformEnv(ref.name) || refs.has(ref.name)) continue;
           refs.set(ref.name, { file, line: lineAt(text, ref.index) });
         }
       }
-      const exampleKeys = new Set<string>();
-      for (const file of EXAMPLE_FILES) {
-        const text = await ctx.readMaybe(file);
-        if (text) for (const key of parseEnv(text).keys()) exampleKeys.add(key);
-      }
-      const localKeys = new Set<string>();
-      for (const file of LOCAL_ENV_NAMES) {
-        const text = await ctx.readMaybe(file);
-        if (text) for (const key of parseEnv(text).keys()) localKeys.add(key);
-      }
+      const exampleKeys = await envKeys(ctx, EXAMPLE_GLOBS);
+      const local = await envFiles(ctx, LOCAL_GLOBS);
       const findings: Finding[] = [];
       for (const [name, where] of refs) {
         const missingExample = !exampleKeys.has(name);
-        const missingLocal = !localKeys.has(name);
-        if (!missingExample && !missingLocal) continue;
+        const missingLocal = !local.keys.has(name);
+        // A documented name is enough on a fresh clone, where .env is gitignored and absent.
+        if (!missingExample && (local.count === 0 || !missingLocal)) continue;
         const whereText = [
           missingExample ? ".env.example" : "",
           missingLocal ? ".env" : "",
@@ -172,10 +164,39 @@ async function collectNames(ctx: { glob(patterns: string[]): Promise<string[]>; 
   for (const file of await ctx.glob(globs)) {
     const text = await ctx.read(file);
     for (const ref of referencedEnv(text)) {
-      if (!skip.has(ref.name)) names.add(ref.name);
+      if (skip.has(ref.name) || isPlatformEnv(ref.name)) continue;
+      names.add(ref.name);
     }
   }
   return names;
+}
+
+async function envKeys(ctx: { glob(patterns: string[]): Promise<string[]>; read(file: string): Promise<string> }, patterns: string[]): Promise<Set<string>> {
+  const keys = new Set<string>();
+  for (const file of await ctx.glob(patterns)) {
+    const text = await ctx.read(file);
+    for (const key of parseEnv(text).keys()) keys.add(key);
+  }
+  return keys;
+}
+
+async function envFiles(
+  ctx: { glob(patterns: string[]): Promise<string[]>; read(file: string): Promise<string> },
+  patterns: string[],
+): Promise<{ keys: Set<string>; count: number }> {
+  const files = await ctx.glob(patterns);
+  const keys = new Set<string>();
+  for (const file of files) {
+    const text = await ctx.read(file);
+    for (const key of parseEnv(text).keys()) keys.add(key);
+  }
+  return { keys, count: files.length };
+}
+
+function isPlatformEnv(name: string): boolean {
+  if (/^(VERCEL|NETLIFY|REPLIT)(_|$)/.test(name)) return true;
+  if (/^REPL_(ID|SLUG|OWNER)$/.test(name)) return true;
+  return name === "HTTP_PROXY" || name === "HTTPS_PROXY" || name === "ALL_PROXY" || name === "NO_PROXY" || name === "PLAYWRIGHT_BROWSERS_PATH";
 }
 
 function referencedEnv(source: string): Array<{ name: string; index: number }> {
