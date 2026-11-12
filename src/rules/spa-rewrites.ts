@@ -1,6 +1,6 @@
 import type { Finding, Rule, RuleDefinition } from "../types.js";
 import { defineRule, verifyFixed } from "../engine/define.js";
-import { depNames, readPackage } from "../engine/package-file.js";
+import { depNames } from "../engine/package-file.js";
 import type { Strategy } from "./types.js";
 
 const ROUTER_DEPS = [
@@ -18,9 +18,9 @@ export const spaRewrites: Strategy = {
     return {
       id: "spa-rewrites",
       title: "SPA refresh and deep-link 404s",
-      description: "Vite single-page apps need a host rewrite to index.html or refreshing a client route returns 404.",
+      description: "Vite single-page apps need one host rewrite to index.html or refreshing a client route returns 404.",
       severity: "error",
-      scopeNote: "Writes Vercel, Netlify, and static redirect files. It does not deploy, and it skips Next.js.",
+      scopeNote: "One existing Vercel, Netlify, or _redirects fallback is enough. It does not deploy, and it skips Next.js.",
       strategy: "spa-rewrites",
       watchGlobs: ["index.html", "vercel.json", "netlify.toml", "public/_redirects", "_redirects", "package.json"],
     };
@@ -40,94 +40,142 @@ function createRule(def: RuleDefinition): Rule {
     scopeNote: def.scopeNote,
     watchGlobs: def.watchGlobs,
     async detect(ctx) {
-      const pkg = await readPackage(ctx);
-      if (!pkg) return [];
-      const deps = depNames(pkg.json);
-      if (deps.has("next")) return [];
-      const files = await ctx.glob(["index.html", "public/index.html", "vite.config.*", "vercel.json", "netlify.toml", "public/_redirects", "_redirects", "src/**/*.{ts,tsx,js,jsx}", "app/**/*.{ts,tsx,js,jsx}"]);
-      const names = new Set(files);
-      const vite = deps.has("vite") || files.some((file) => /^vite\.config\./.test(file));
-      const html = names.has("index.html") || names.has("public/index.html");
-      if (!vite || !html) return [];
-      const routerDep = ROUTER_DEPS.some((name) => deps.has(name));
-      let routerCode = false;
-      if (!routerDep) {
-        for (const file of files) {
-          if (!/\.(ts|tsx|js|jsx)$/.test(file)) continue;
-          const text = await ctx.read(file);
-          if (/BrowserRouter|createBrowserRouter|createRouter|RouterProvider/.test(text)) {
-            routerCode = true;
-            break;
-          }
-        }
-      }
-      if (!routerDep && !routerCode) return [];
-
+      const packages = await ctx.glob(["**/package.json"]);
       const findings: Finding[] = [];
-      const vercel = await ctx.readMaybe("vercel.json");
-      if (vercel == null) {
-        findings.push(finding(def.id, severity, "vercel", "vercel.json", "Vercel rewrite to /index.html is missing."));
-      } else {
-        try {
-          const json = JSON.parse(vercel) as { rewrites?: unknown };
-          if (!hasSpaRewrite(json)) {
-            findings.push(finding(def.id, severity, "vercel", "vercel.json", "vercel.json has no SPA rewrite to /index.html."));
+      for (const pkgFile of packages) {
+        const dir = pkgFile === "package.json" ? "" : pkgFile.slice(0, -"/package.json".length);
+        if (!(await isViteSpa(ctx, dir))) continue;
+        if (await hasFallback(ctx, dir)) continue;
+        const vercelPath = joinRel(dir, "vercel.json");
+        const vercel = await ctx.readMaybe(vercelPath);
+        let fixable = true;
+        if (vercel != null) {
+          try {
+            JSON.parse(vercel);
+          } catch {
+            fixable = false;
           }
-        } catch {
-          findings.push({
-            ...finding(def.id, severity, "vercel", "vercel.json", "vercel.json is not valid JSON, so the SPA rewrite could not be added."),
-            fixable: false,
-          });
         }
-      }
-
-      const netlify = await ctx.readMaybe("netlify.toml");
-      if (netlify == null || !hasNetlifySpa(netlify)) {
-        findings.push(finding(def.id, severity, "netlify", "netlify.toml", "Netlify redirect from /* to /index.html (200) is missing."));
-      }
-
-      const redirects = (await ctx.readMaybe("public/_redirects")) ?? (await ctx.readMaybe("_redirects"));
-      const redirectFile = (await ctx.exists("public/_redirects")) || !(await ctx.exists("_redirects")) ? "public/_redirects" : "_redirects";
-      if (!redirects || !hasRedirectsSpa(redirects)) {
-        findings.push(finding(def.id, severity, "redirects", redirectFile, "Static host _redirects rule /* /index.html 200 is missing."));
+        const item = finding(
+          def.id,
+          severity,
+          dir || ".",
+          vercelPath,
+          dir
+            ? `${dir} is a Vite SPA with client routes and no host fallback to /index.html.`
+            : "Vite SPA has client routes and no host fallback to /index.html.",
+        );
+        item.meta = { ...item.meta, dir };
+        if (!fixable) item.fixable = false;
+        findings.push(item);
       }
       return findings;
     },
     async fix(ctx, findings) {
-      const hasApi = (await ctx.glob(["api/**/*", "pages/api/**/*", "app/api/**/*"])).length > 0;
       for (const item of findings) {
-        if (item.meta?.host === "vercel") {
-          const current = await ctx.readMaybe("vercel.json");
-          const json = current ? (JSON.parse(current) as Record<string, unknown>) : {};
-          const rewrites = Array.isArray(json.rewrites) ? [...json.rewrites] : [];
-          rewrites.push({
-            source: hasApi ? "/((?!api/).*)" : "/(.*)",
-            destination: "/index.html",
-          });
-          json.rewrites = rewrites;
-          await ctx.write("vercel.json", `${JSON.stringify(json, null, 2)}\n`);
-        }
-        if (item.meta?.host === "netlify") {
-          const current = (await ctx.readMaybe("netlify.toml")) ?? "";
+        const dir = String(item.meta?.dir ?? "");
+        const hasApi = (await ctx.glob([joinRel(dir, "api/**/*"), joinRel(dir, "pages/api/**/*"), joinRel(dir, "app/api/**/*")])).length > 0;
+        const vercelPath = joinRel(dir, "vercel.json");
+        const current = await ctx.readMaybe(vercelPath);
+        const json = current ? (JSON.parse(current) as Record<string, unknown>) : {};
+        const rewrites = Array.isArray(json.rewrites) ? [...json.rewrites] : [];
+        rewrites.push({
+          source: hasApi ? "/((?!api/).*)" : "/(.*)",
+          destination: "/index.html",
+        });
+        json.rewrites = rewrites;
+        await ctx.write(vercelPath, `${JSON.stringify(json, null, 2)}\n`);
+
+        const netlifyPath = joinRel(dir, "netlify.toml");
+        const netlify = (await ctx.readMaybe(netlifyPath)) ?? "";
+        if (!hasNetlifySpa(netlify)) {
           const block = `[[redirects]]\n  from = "/*"\n  to = "/index.html"\n  status = 200\n`;
-          const sep = current.length === 0 ? "" : current.endsWith("\n") ? "\n" : "\n\n";
-          await ctx.write("netlify.toml", `${current}${sep}${block}`);
+          const sep = netlify.length === 0 ? "" : netlify.endsWith("\n") ? "\n" : "\n\n";
+          await ctx.write(netlifyPath, `${netlify}${sep}${block}`);
         }
-        if (item.meta?.host === "redirects") {
-          const file = String(item.file ?? "public/_redirects");
-          const current = (await ctx.readMaybe(file)) ?? "";
+
+        const redirectPath = (await ctx.exists(joinRel(dir, "_redirects"))) && !(await ctx.exists(joinRel(dir, "public/_redirects")))
+          ? joinRel(dir, "_redirects")
+          : joinRel(dir, "public/_redirects");
+        const redirects = (await ctx.readMaybe(redirectPath)) ?? "";
+        if (!hasRedirectsSpa(redirects)) {
           const line = "/*    /index.html   200\n";
-          const sep = current.length === 0 ? "" : current.endsWith("\n") ? "" : "\n";
-          await ctx.write(file, `${current}${sep}${line}`);
+          const sep = redirects.length === 0 ? "" : redirects.endsWith("\n") ? "" : "\n";
+          await ctx.write(redirectPath, `${redirects}${sep}${line}`);
         }
       }
-      return { notes: ["Host rewrites send unknown paths to index.html with status 200. API routes are left alone when an api/ directory exists."] };
+      return { notes: ["One host fallback is enough. The fix still writes Vercel, Netlify, and _redirects so a static host can refresh a client route. API routes are left alone when an api/ directory exists."] };
     },
     verify(ctx, findings) {
       return verifyFixed(rule, ctx, findings);
     },
   });
   return rule;
+}
+
+async function isViteSpa(ctx: SpaCtx, dir: string): Promise<boolean> {
+  const pkgRaw = await ctx.readMaybe(joinRel(dir, "package.json"));
+  if (!pkgRaw) return false;
+  let json: Record<string, unknown>;
+  try {
+    json = JSON.parse(pkgRaw) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+  const deps = depNames(json);
+  if (deps.has("next")) return false;
+  const configs = ["vite.config.ts", "vite.config.js", "vite.config.mts", "vite.config.mjs", "vite.config.cjs"];
+  let vite = deps.has("vite");
+  if (!vite) {
+    for (const name of configs) {
+      if (await ctx.exists(joinRel(dir, name))) {
+        vite = true;
+        break;
+      }
+    }
+  }
+  if (!vite) return false;
+  const html = (await ctx.exists(joinRel(dir, "index.html"))) || (await ctx.exists(joinRel(dir, "public/index.html")));
+  if (!html) return false;
+  if (ROUTER_DEPS.some((name) => deps.has(name))) return true;
+  const files = await ctx.glob([joinRel(dir, "src/**/*.{ts,tsx,js,jsx}"), joinRel(dir, "app/**/*.{ts,tsx,js,jsx}")]);
+  for (const file of files) {
+    const text = await ctx.read(file);
+    if (/BrowserRouter|createBrowserRouter|createRouter|RouterProvider/.test(text)) return true;
+  }
+  return false;
+}
+
+async function hasFallback(ctx: SpaCtx, dir: string): Promise<boolean> {
+  return fallbackIn(ctx, dir);
+}
+
+async function fallbackIn(ctx: SpaCtx, dir: string): Promise<boolean> {
+  const vercel = await ctx.readMaybe(joinRel(dir, "vercel.json"));
+  if (vercel != null) {
+    try {
+      if (hasSpaRewrite(JSON.parse(vercel) as { rewrites?: unknown })) return true;
+    } catch {
+      // Invalid JSON is not a fallback. Another host file still counts.
+    }
+  }
+  const netlify = await ctx.readMaybe(joinRel(dir, "netlify.toml"));
+  if (netlify && hasNetlifySpa(netlify)) return true;
+  const publicRedirects = await ctx.readMaybe(joinRel(dir, "public/_redirects"));
+  if (publicRedirects && hasRedirectsSpa(publicRedirects)) return true;
+  const rootRedirects = await ctx.readMaybe(joinRel(dir, "_redirects"));
+  return Boolean(rootRedirects && hasRedirectsSpa(rootRedirects));
+}
+
+function joinRel(dir: string, file: string): string {
+  return dir ? `${dir}/${file}` : file;
+}
+
+interface SpaCtx {
+  read(file: string): Promise<string>;
+  readMaybe(file: string): Promise<string | null>;
+  exists(file: string): Promise<boolean>;
+  glob(patterns: string[]): Promise<string[]>;
 }
 
 function finding(ruleId: string, severity: "error" | "warning", host: string, file: string, message: string): Finding {

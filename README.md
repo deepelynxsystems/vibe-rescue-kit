@@ -122,7 +122,7 @@ The script copies `examples/broken-spa` to a temp directory, then runs `scan`, `
 
 ### leaked-secrets
 
-Service-role JWTs, `sk_live` / `sk_test` / `rk_` keys, `sb_secret_` keys, AWS access key ids, GitHub `ghp_` tokens, private-key blocks, and client reads of env names shaped like secrets. Also an `.env` that is not gitignored, and a real secret committed in `.env.example`. Anon keys and `pk_` publishable keys are left in client code. Files under `api/`, `server/`, and `*.server.*` are treated as server code.
+Service-role JWTs, `sk_live` / `sk_test` / `rk_` keys, `sb_secret_` keys, AWS access key ids, GitHub `ghp_` tokens, private-key blocks, and client reads of env names shaped like secrets. Also an `.env` that is not gitignored, a `.gitignore` that does not cover `.env`, and a real secret committed in `.env.example`. Anon keys and `pk_` publishable keys are left in client code. Files under `api/`, `server/`, and `*.server.*` are server code. In a Next.js app, `app/` files without `"use client"`, and `route` handlers, are server code too.
 
 The fix moves the value into gitignored `.env`, writes an empty key in `.env.example`, and replaces the client literal with `serverOnlyEnv("NAME")`, which throws in the browser. **Rotate the key.** The tool does not call the provider, and it does not rewrite git history. If git still tracks `.env`, run `git rm --cached .env`.
 
@@ -130,7 +130,7 @@ The fix moves the value into gitignored `.env`, writes an empty key in `.env.exa
 
 ### supabase-rls
 
-`CREATE TABLE` in `supabase/migrations`, `migrations`, or `db/migrations` with RLS off, RLS disabled, or RLS on and no policy. The state is tracked across migration files in filename order. A comment that mentions `enable row level security` does not count.
+`CREATE TABLE` for a `public` table in active SQL (`scripts/`, `supabase/migrations`, `db/`, and the rest of the tree) with RLS off or RLS disabled. RLS that is already enabled is not an error, even when the table has no policy. Discarded and backup folders are skipped. Tables in other schemas are ignored. The state is tracked across the active SQL files in filename order. A comment that mentions `enable row level security` does not count.
 
 The fix writes a new migration that enables RLS and adds `vibe_rescue_deny_all` for `anon` and `authenticated` with `USING (false)`. **No database connection is opened.**
 
@@ -138,7 +138,7 @@ The fix writes a new migration that enables RLS and adds `vibe_rescue_deny_all` 
 
 ### missing-env
 
-`process.env.NAME` and `import.meta.env.NAME` (and the bracket form) when `NAME` is missing from `.env.example` or from the local env files. `NODE_ENV`, Vite's `MODE` / `DEV` / `PROD` / `SSR` / `BASE_URL`, and a short built-in skip list are ignored.
+`process.env.NAME` and `import.meta.env.NAME` (and the bracket form) when `NAME` is missing from `.env.example` (or `.env.sample` / `.env.template`, including in a nested app). A documented name is enough when no local env file is in the tree. A read with `||`, `??`, or a default parameter is optional and is not a failure. `NODE_ENV`, Vite's `MODE` / `DEV` / `PROD` / `SSR` / `BASE_URL`, `VERCEL_*`, `NETLIFY_*`, proxy variables, Replit's `REPL_ID`, and a short built-in skip list are ignored. Nested `src/`, `app/`, and `lib/` trees are scanned.
 
 The fix adds the keys (empty) to `.env.example` and `.env`, writes `.vibe-rescue/check-env.mjs`, and wires `predev` / `prestart` when those scripts exist. Empty values still fail the startup check, so `npm run dev` refuses to boot until you fill them in. The rule is satisfied once the names exist in the files.
 
@@ -146,7 +146,7 @@ The fix adds the keys (empty) to `.env.example` and `.env`, writes `.vibe-rescue
 
 ### spa-rewrites
 
-A Vite app with `index.html` and a client router (`react-router-dom`, `wouter`, TanStack Router, and the usual suspects) and no host fallback. Next.js projects are skipped.
+A Vite app with `index.html` and a client router (`react-router-dom`, `wouter`, TanStack Router, and the usual suspects) and no host fallback. One valid fallback is enough: a Vercel rewrite, a Netlify `/*` → `/index.html` 200 redirect, or a `_redirects` rule. Other host files are not required. Nested Vite apps are checked on their own. Next.js projects are skipped.
 
 The fix merges a rewrite into `vercel.json` (existing keys such as `buildCommand` stay), appends a Netlify `[[redirects]]` block, and writes `public/_redirects`. If an `api/` directory exists, the Vercel source excludes `api/`.
 
@@ -154,13 +154,13 @@ The fix merges a rewrite into `vercel.json` (existing keys such as `buildCommand
 
 ### hardcoded-localhost
 
-`http://localhost` and `http://127.0.0.1` string literals in client source. Port `54321` and `54322` become `VITE_SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL`. Other ports become `VITE_API_BASE_URL` or `NEXT_PUBLIC_API_BASE_URL`. Paths are kept (`/api/items`). Server files are not rewritten. The previous origin is written to `.env` and `.env.example` as the local default.
+`http://localhost`, `http://127.0.0.1`, and a bare `localhost:port` in client source. Dev configs, `NODE_ENV === "development"` / `import.meta.env.DEV` branches, comments, and `placeholder` values are ignored. Port `54321` and `54322` become `VITE_SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL`. Other ports become `VITE_API_BASE_URL` or `NEXT_PUBLIC_API_BASE_URL`. Paths are kept (`/api/items`). Server files are not rewritten. The previous origin is written to `.env` and `.env.example` as the local default.
 
 <img src="docs/assets/before-after/hardcoded-localhost.svg" alt="Before: fetch to http://localhost:3000. After: import.meta.env.VITE_API_BASE_URL" width="100%">
 
 ### import-paths
 
-Relative imports whose casing does not match the file on disk, and bare imports whose package is missing from `package.json`. Node built-ins, `node:` imports, and `tsconfig` / `jsconfig` path aliases (plus `@/`) are left alone. Ambiguous case matches are reported and not rewritten.
+Relative imports whose casing does not match the file on disk, and bare imports whose package is missing from the nearest `package.json` (a workspace package, not only the repo root). Node built-ins, `node:` / `npm:` / `jsr:` specifiers, and `tsconfig` / `jsconfig` path aliases (plus `@/`) are left alone. Strings, comments, and JSDoc `import()` types are not imports. Ambiguous case matches are reported and not rewritten.
 
 The casing is corrected in the specifier. Missing packages are added as `"*"`. **The package manager is not run.** Run `npm install` afterwards.
 
@@ -168,7 +168,7 @@ The casing is corrected in the specifier. Missing packages are added as `"*"`. *
 
 ### webhook-signature
 
-A file whose name or route mentions a webhook, mentions Stripe, and never calls `constructEvent`. A Stripe helper that is not a webhook is ignored.
+A file whose name or route mentions a webhook, imports Stripe or constructs a Stripe client, and never verifies the payload. `constructEvent`, `timingSafeEqual`, and `createHmac` all count as verification. The word `stripe` by itself, including a `stripe-signature` header on another provider, does not. A Stripe helper that is not a webhook is ignored.
 
 The fix handles two shapes. App Router `await req.json()` is replaced with `request.text()` plus `constructEvent`. `const event = req.body` (Express or Next Pages) is replaced with a raw-body check; Pages handlers also get `bodyParser: false`. `STRIPE_WEBHOOK_SECRET` is added to `.env.example`. The tool does not call Stripe.
 

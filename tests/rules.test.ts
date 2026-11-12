@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { reportJson, reportText } from "../src/engine/report.js";
 import { run } from "../src/engine/runner.js";
+import { extractSpecifiers } from "../src/engine/text.js";
 import { fixProject, rule, text, withFixture, withTemp } from "./helpers.js";
 
 const SERVICE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UifQ.signature1";
@@ -19,6 +20,7 @@ describe("leaked-secrets", () => {
       expect(found?.findings.map((item) => item.file).sort()).toEqual([
         ".env",
         ".env.example",
+        ".gitignore",
         "src/App.tsx",
         "src/lib/supabase.ts",
         "src/lib/supabase.ts",
@@ -46,6 +48,22 @@ describe("leaked-secrets", () => {
       expect(again.totals.filesChanged).toBe(0);
     });
   });
+
+  it("treats Next.js server modules as server code and warns when .gitignore misses .env", async () => {
+    await withTemp(async (dir) => {
+      await writeProject(dir, {
+        "package.json": JSON.stringify({ dependencies: { next: "14.2.0" } }),
+        "app/debug/page.tsx": "export default function Page() { return process.env.SUPABASE_SERVICE_ROLE_KEY; }\n",
+        "app/shop/route.ts": "export function GET() { return process.env.SUPABASE_SERVICE_ROLE_KEY; }\n",
+        "app/widget/page.tsx": "\"use client\";\nexport default function Page() { return process.env.SUPABASE_SERVICE_ROLE_KEY; }\n",
+      });
+      const report = await run({ root: dir, mode: "scan", ruleId: "leaked-secrets" });
+      const files = rule(report, "leaked-secrets")?.findings.map((item) => item.file).sort();
+      expect(files).toEqual([".gitignore", "app/widget/page.tsx"]);
+      const warning = rule(report, "leaked-secrets")?.findings.find((item) => item.file === ".gitignore");
+      expect(warning?.severity).toBe("warning");
+    });
+  });
 });
 
 describe("supabase-rls", () => {
@@ -54,10 +72,13 @@ describe("supabase-rls", () => {
       const report = await run({ root: dir, mode: "scan", ruleId: "supabase-rls" });
       const messages = rule(report, "supabase-rls")?.findings.map((item) => item.message).join("\n") ?? "";
       expect(messages).toContain("public.notes");
-      expect(messages).toContain("public.audit_log");
       expect(messages).toContain("public.legacy_flags");
       expect(messages).toContain('public."Notes"');
+      expect(messages).toContain("public.widgets");
+      expect(messages).not.toContain("public.audit_log");
       expect(messages).not.toContain("public.profiles");
+      expect(messages).not.toContain("internal.secrets");
+      expect(messages).not.toContain("discarded_goals");
       const fixed = await fixProject(dir);
       expect(fixed.ok).toBe(true);
       const files = await readdir(join(dir, "supabase/migrations"));
@@ -70,6 +91,7 @@ describe("supabase-rls", () => {
       expect(sql).toContain("does not connect to a database");
       expect(sql).toContain("public.notes");
       expect(sql).not.toContain("public.profiles ENABLE");
+      expect(sql).not.toContain("audit_log");
       const again = await run({ root: dir, mode: "scan" });
       expect(again.ok).toBe(true);
     });
@@ -98,13 +120,50 @@ describe("missing-env", () => {
       expect(again.ok).toBe(true);
     });
   });
+
+  it("accepts a documented name when .env is absent and ignores platform variables", async () => {
+    await withTemp(async (dir) => {
+      await writeProject(dir, {
+        "package.json": JSON.stringify({ scripts: { dev: "vite" } }),
+        ".env.example": "VITE_SUPABASE_URL=\n",
+        "src/app.ts": [
+          "export const url = import.meta.env.VITE_SUPABASE_URL;",
+          "export const region = process.env.VERCEL_REGION;",
+          "export const proxy = process.env.HTTPS_PROXY;",
+          "export const repl = process.env.REPL_ID;",
+        ].join("\n"),
+        "apps/web/src/main.ts": "export const key = process.env.WIDGET_KEY;\n",
+      });
+      const report = await run({ root: dir, mode: "scan", ruleId: "missing-env" });
+      const names = rule(report, "missing-env")?.findings.map((item) => item.meta?.name);
+      expect(names).toEqual(["WIDGET_KEY"]);
+    });
+  });
+
+  it("does not fail on ||, ??, or a default parameter", async () => {
+    await withTemp(async (dir) => {
+      await writeProject(dir, {
+        "package.json": JSON.stringify({ scripts: { dev: "vite" } }),
+        "src/config.ts": [
+          "export const required = process.env.REQUIRED_TOKEN;",
+          "export const fallback = process.env.OPTIONAL_TOKEN || \"local\";",
+          "export const nil = import.meta.env.VITE_OPTIONAL ?? \"\";",
+          "export const site = process.env.SITE_URL?.trim() || \"https://example.com\";",
+          "export function run(port = process.env.PORT_DEFAULT) { return port; }",
+        ].join("\n"),
+      });
+      const report = await run({ root: dir, mode: "scan", ruleId: "missing-env" });
+      const names = rule(report, "missing-env")?.findings.map((item) => item.meta?.name);
+      expect(names).toEqual(["REQUIRED_TOKEN"]);
+    });
+  });
 });
 
 describe("spa-rewrites", () => {
   it("adds host rewrites and preserves existing vercel config", async () => {
     await withFixture("spa-rewrites", async (dir) => {
       const before = await run({ root: dir, mode: "scan", ruleId: "spa-rewrites" });
-      expect(rule(before, "spa-rewrites")?.findings).toHaveLength(3);
+      expect(rule(before, "spa-rewrites")?.findings).toHaveLength(1);
       const fixed = await fixProject(dir);
       expect(fixed.ok).toBe(true);
       const vercel = JSON.parse(await text(dir, "vercel.json")) as { buildCommand: string; rewrites: Array<{ source: string; destination: string }> };
@@ -128,6 +187,23 @@ describe("spa-rewrites", () => {
       expect(rule(report, "spa-rewrites")?.findings ?? []).toHaveLength(0);
     });
   });
+
+  it("accepts any one host fallback and still flags a nested SPA with none", async () => {
+    await withTemp(async (dir) => {
+      await writeProject(dir, {
+        "package.json": JSON.stringify({ dependencies: { vite: "^6.0.0", "react-router-dom": "^6.0.0" } }),
+        "index.html": "<div id=\"root\"></div>\n",
+        "src/main.tsx": "export const route = 'BrowserRouter';\n",
+        "netlify.toml": "[[redirects]]\n  from = \"/*\"\n  to = \"/index.html\"\n  status = 200\n",
+        "apps/web/package.json": JSON.stringify({ dependencies: { vite: "^6.0.0", "react-router-dom": "^6.0.0" } }),
+        "apps/web/index.html": "<div id=\"root\"></div>\n",
+        "apps/web/src/main.tsx": "export const route = 'BrowserRouter';\n",
+      });
+      const report = await run({ root: dir, mode: "scan", ruleId: "spa-rewrites" });
+      const files = rule(report, "spa-rewrites")?.findings.map((item) => item.file);
+      expect(files).toEqual(["apps/web/vercel.json"]);
+    });
+  });
 });
 
 describe("hardcoded-localhost", () => {
@@ -149,17 +225,62 @@ describe("hardcoded-localhost", () => {
       expect((await run({ root: dir, mode: "scan" })).ok).toBe(true);
     });
   });
+
+  it("ignores dev-only and placeholder URLs and flags a bare host", async () => {
+    await withTemp(async (dir) => {
+      await writeProject(dir, {
+        "package.json": JSON.stringify({ dependencies: { vite: "^6.0.0" } }),
+        "src/api.ts": [
+          "export const live = \"http://localhost:4000\";",
+          "const preview = import.meta.env.DEV ? \"http://localhost:3000\" : \"\";",
+          "export const field = { placeholder: \"http://127.0.0.1:8080\" };",
+          "export const host = \"localhost:5173\";",
+          "const origins = dev ? ['https://example.com', 'http://localhost:9'] : ['https://example.com'];",
+          "void preview; void field; void origins;",
+        ].join("\n"),
+        "src/vite.config.ts": "export const target = \"http://localhost:3000\";\n",
+      });
+      const report = await run({ root: dir, mode: "scan", ruleId: "hardcoded-localhost" });
+      const values = rule(report, "hardcoded-localhost")?.findings.map((item) => item.message);
+      expect(values).toEqual([
+        "Hardcoded http://localhost:4000 in src/api.ts.",
+        "Hardcoded localhost:5173 in src/api.ts.",
+      ]);
+    });
+  });
 });
 
 describe("import-paths", () => {
+  it("reads real import specifiers and skips strings, comments, and JSDoc", () => {
+    const source = [
+      "import.meta.env.VITE_X;",
+      "const sample = \"import \";",
+      "// imported from \"not-a-pkg\"",
+      "/** @type {import('postcss-load-config').Config} */",
+      "export const marker = sample.startsWith('import ');",
+      "import { format } from \"date-fns\";",
+      "export { format }",
+      "import { pad } from \"left-pad\"",
+      "const req = require(\"left-pad\");",
+      "void marker; void req; void format;",
+    ].join("\n");
+    expect(extractSpecifiers(source).map((hit) => hit.spec).sort()).toEqual(["date-fns", "left-pad", "left-pad"]);
+  });
+
   it("fixes casing and adds a missing dependency", async () => {
     await withFixture("import-paths", async (dir) => {
       const report = await run({ root: dir, mode: "scan", ruleId: "import-paths" });
       const findings = rule(report, "import-paths")?.findings ?? [];
-      expect(findings.map((item) => item.message).join("\n")).toContain("./components/button");
-      expect(findings.map((item) => item.message).join("\n")).toContain("date-fns");
-      expect(findings.map((item) => item.message).join("\n")).not.toContain("react");
-      expect(findings.map((item) => item.message).join("\n")).not.toContain('"fs"');
+      const messages = findings.map((item) => item.message).join("\n");
+      expect(messages).toContain("./components/button");
+      expect(messages).toContain("date-fns");
+      expect(messages).toContain("untagged-dep");
+      expect(messages).not.toContain("react");
+      expect(messages).not.toContain("left-pad");
+      expect(messages).not.toContain("postcss-load-config");
+      expect(messages).not.toContain("npm:resend");
+      expect(messages).not.toContain('"fs"');
+      expect(findings.filter((item) => item.meta?.kind === "case")).toHaveLength(1);
       const fixed = await fixProject(dir);
       expect(fixed.ok).toBe(true);
       const source = await text(dir, "src/App.tsx");
@@ -168,6 +289,10 @@ describe("import-paths", () => {
       const pkg = JSON.parse(await text(dir, "package.json")) as { dependencies: Record<string, string> };
       expect(pkg.dependencies["date-fns"]).toBe("*");
       expect(pkg.dependencies.react).toBe("^18.3.1");
+      expect(pkg.dependencies["untagged-dep"]).toBeUndefined();
+      const web = JSON.parse(await text(dir, "apps/web/package.json")) as { dependencies: Record<string, string> };
+      expect(web.dependencies["untagged-dep"]).toBe("*");
+      expect(web.dependencies["left-pad"]).toBe("^1.3.0");
       expect((await run({ root: dir, mode: "scan" })).ok).toBe(true);
     });
   });

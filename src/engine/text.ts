@@ -202,29 +202,199 @@ export interface SpecifierHit {
 /** Import / export / require specifiers. Indexes point at the specifier text, not the quotes. */
 export function extractSpecifiers(source: string): SpecifierHit[] {
   const hits: SpecifierHit[] = [];
-  const patterns = [
-    /\bimport\s*(?:type\s+)?[\s\S]*?\sfrom\s*(['"])([^'"]+)\1/g,
-    /\bimport\s*(['"])([^'"]+)\1/g,
-    /\bexport\s+(?:type\s+)?\{[^}]*\}\s*from\s*(['"])([^'"]+)\1/g,
-    /\bexport\s+\*\s*(?:as\s+\w+\s+)?from\s*(['"])([^'"]+)\1/g,
-    /\bimport\s*\(\s*(['"])([^'"]+)\1\s*\)/g,
-    /\brequire\s*\(\s*(['"])([^'"]+)\1\s*\)/g,
-  ];
-  const seen = new Set<number>();
-  for (const pattern of patterns) {
-    pattern.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(source))) {
-      const spec = match[2];
-      if (!spec) continue;
-      const specIndex = match.index + match[0].lastIndexOf(spec);
-      if (seen.has(specIndex)) continue;
-      seen.add(specIndex);
-      hits.push({ spec, specIndex });
+  let i = 0;
+  while (i < source.length) {
+    if (isSpace(source[i])) {
+      i += 1;
+      continue;
     }
+    if (source[i] === "/" && source[i + 1] === "/") {
+      const next = source.indexOf("\n", i);
+      i = next === -1 ? source.length : next + 1;
+      continue;
+    }
+    if (source[i] === "/" && source[i + 1] === "*") {
+      const next = source.indexOf("*/", i + 2);
+      i = next === -1 ? source.length : next + 2;
+      continue;
+    }
+    if (source[i] === "'" || source[i] === '"' || source[i] === "`") {
+      i = skipString(source, i);
+      continue;
+    }
+    if (keywordAt(source, i, "import")) {
+      const parsed = parseImport(source, i + "import".length);
+      if (parsed) hits.push(...parsed.hits);
+      i = parsed ? parsed.end : i + "import".length;
+      continue;
+    }
+    if (keywordAt(source, i, "export")) {
+      const parsed = parseExport(source, i + "export".length);
+      if (parsed?.hit) hits.push(parsed.hit);
+      i = parsed ? parsed.end : i + "export".length;
+      continue;
+    }
+    if (keywordAt(source, i, "require")) {
+      const parsed = parseRequire(source, i + "require".length);
+      if (parsed?.hit) hits.push(parsed.hit);
+      i = parsed ? parsed.end : i + "require".length;
+      continue;
+    }
+    i += 1;
   }
-  hits.sort((a, b) => a.specIndex - b.specIndex);
   return hits;
+}
+
+function parseImport(source: string, start: number): { hits: SpecifierHit[]; end: number } | null {
+  const i = skipSpaceAndComments(source, start);
+  if (source[i] === ".") return null;
+  if (source[i] === "(") {
+    const spec = readSpecifier(source, i + 1);
+    return spec ? { hits: [spec], end: spec.end } : null;
+  }
+  if (source[i] === "'" || source[i] === '"') {
+    const spec = readSpecifier(source, i);
+    return spec ? { hits: [spec], end: spec.end } : null;
+  }
+  const found = findFromSpecifier(source, i);
+  return { hits: found.hit ? [found.hit] : [], end: found.end };
+}
+
+function parseExport(source: string, start: number): { hit?: SpecifierHit; end: number } | null {
+  let i = skipSpaceAndComments(source, start);
+  if (keywordAt(source, i, "default")) return { end: i + "default".length };
+  if (keywordAt(source, i, "type")) {
+    const after = skipSpaceAndComments(source, i + "type".length);
+    if (source[after] !== "{" && source[after] !== "*") return { end: after };
+    i = after;
+  }
+  if (source[i] === "*") {
+    const found = findFromSpecifier(source, i + 1);
+    return { hit: found.hit, end: found.end };
+  }
+  if (source[i] === "{") {
+    const found = findFromSpecifier(source, i);
+    return { hit: found.hit, end: found.end };
+  }
+  return { end: i };
+}
+
+function parseRequire(source: string, start: number): { hit?: SpecifierHit; end: number } | null {
+  const i = skipSpaceAndComments(source, start);
+  if (source[i] !== "(") return null;
+  const spec = readSpecifier(source, i + 1);
+  return spec ? { hit: spec, end: spec.end } : null;
+}
+
+function findFromSpecifier(source: string, start: number): { hit?: SpecifierHit; end: number } {
+  let i = start;
+  let depth = 0;
+  while (i < source.length) {
+    i = skipSpaceAndComments(source, i);
+    if (i >= source.length) break;
+    const c = source[i];
+    if (c === "'" || c === '"' || c === "`") {
+      i = skipString(source, i);
+      continue;
+    }
+    if (c === ";" && depth === 0) return { end: i + 1 };
+    if (c === "{" || c === "[" || c === "(") {
+      depth += 1;
+      i += 1;
+      continue;
+    }
+    if (c === "}" || c === "]" || c === ")") {
+      depth = Math.max(0, depth - 1);
+      i += 1;
+      if (depth === 0) {
+        const look = skipSpaceAndComments(source, i);
+        if (!keywordAt(source, look, "from")) return { end: i };
+      }
+      continue;
+    }
+    if (depth === 0 && keywordAt(source, i, "from")) {
+      const spec = readSpecifier(source, i + "from".length);
+      return spec ? { hit: spec, end: spec.end } : { end: i + "from".length };
+    }
+    i += 1;
+  }
+  return { end: source.length };
+}
+
+function readSpecifier(source: string, start: number): (SpecifierHit & { end: number }) | null {
+  const i = skipSpaceAndComments(source, start);
+  const quote = source[i];
+  if (quote !== "'" && quote !== '"') return null;
+  let j = i + 1;
+  while (j < source.length) {
+    if (source[j] === "\\") {
+      j += 2;
+      continue;
+    }
+    if (source[j] === quote) {
+      return { spec: source.slice(i + 1, j), specIndex: i + 1, end: j + 1 };
+    }
+    j += 1;
+  }
+  return null;
+}
+
+function skipSpaceAndComments(source: string, i: number): number {
+  while (i < source.length) {
+    if (isSpace(source[i])) {
+      i += 1;
+      continue;
+    }
+    if (source[i] === "/" && source[i + 1] === "/") {
+      const next = source.indexOf("\n", i);
+      i = next === -1 ? source.length : next + 1;
+      continue;
+    }
+    if (source[i] === "/" && source[i + 1] === "*") {
+      const next = source.indexOf("*/", i + 2);
+      i = next === -1 ? source.length : next + 2;
+      continue;
+    }
+    break;
+  }
+  return i;
+}
+
+function skipString(source: string, i: number): number {
+  const quote = source[i];
+  let j = i + 1;
+  while (j < source.length) {
+    if (source[j] === "\\") {
+      j += 2;
+      continue;
+    }
+    if (quote === "`" && source[j] === "$" && source[j + 1] === "{") {
+      j += 2;
+      let depth = 1;
+      while (j < source.length && depth > 0) {
+        if (source[j] === "{") depth += 1;
+        else if (source[j] === "}") depth -= 1;
+        j += 1;
+      }
+      continue;
+    }
+    if (source[j] === quote) return j + 1;
+    j += 1;
+  }
+  return source.length;
+}
+
+function keywordAt(source: string, i: number, word: string): boolean {
+  if (!source.startsWith(word, i)) return false;
+  const before = i === 0 ? "" : source[i - 1];
+  const after = source[i + word.length] ?? "";
+  if (before && /[A-Za-z0-9_$.]/.test(before)) return false;
+  if (after && /[A-Za-z0-9_$]/.test(after)) return false;
+  return true;
+}
+
+function isSpace(char: string | undefined): boolean {
+  return char === " " || char === "\n" || char === "\r" || char === "\t" || char === "\f";
 }
 
 export function relativeImport(fromFile: string, targetFile: string): string {
