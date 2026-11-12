@@ -1,0 +1,15 @@
+id: demo-warning
+title: Demo warning
+description: Warning used by the action test so the severity input can ignore it.
+severity: warning
+detect:
+  globs:
+    - "src/**/*.ts"
+  pattern: "hello-warning"
+  message: "Demo warning in $file:$line."
+fix:
+  type: replace
+  pattern: "hello-warning"
+  replacement: "hello"
+verify:
+  type: rescan

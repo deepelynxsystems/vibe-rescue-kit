@@ -68,7 +68,7 @@ def hero() -> str:
     <rect x="584" y="312" width="196" height="40" rx="20" fill="{SURFACE}" stroke="{LINE}"/>
     <text x="608" y="338" fill="{FG}">04  keep or roll back</text>
   </g>
-  <text x="72" y="500" fill="{MUTED}" font-family="{MONO}" font-size="16">npx vibe-rescue scan   ·   npx vibe-rescue fix --yes</text>
+  <text x="72" y="500" fill="{MUTED}" font-family="{MONO}" font-size="16">vibe-rescue scan   ·   vibe-rescue fix --yes</text>
   <text x="72" y="528" fill="{CORAL}" font-family="{FONT}" font-size="15" font-weight="650">built by deepelynx  ·  deepelynx.com</text>
   <g>
     <rect x="860" y="150" width="360" height="280" rx="18" fill="{SURFACE}" stroke="{LINE}"/>

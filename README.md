@@ -12,12 +12,14 @@
 **vibe-rescue-kit** fixes the failures that show up after a weekend with Lovable, Bolt, Cursor, Replit, or v0. It is a local CLI for Vite, React, and Next.js projects that also use Supabase. Each problem is a rule with three parts: **detect**, **fix**, and **verify**. A fix is kept only when verification passes. Otherwise the files are restored and the report says why.
 
 ```bash
-npx vibe-rescue scan
-npx vibe-rescue fix --dry-run
-npx vibe-rescue fix --yes
+npm ci
+npm run build
+node dist/cli.js scan
+node dist/cli.js fix --dry-run
+node dist/cli.js fix --yes
 ```
 
-This repository is the source. It is not published to npm from here. Until it is, clone it and run the local build (see [Develop](#develop)).
+This repository is the source. Run it from a clone, or in CI with the [GitHub Action](#use-as-a-github-action). It is not installed from the npm registry.
 
 Built by [deepelynx](https://deepelynx.com).
 
@@ -54,22 +56,13 @@ Every auto-fix is reversible:
 
 Exit codes: `0` clean or every fix verified, `1` findings remain or a fix was rolled back, `2` usage error or confirmation required.
 
-## Install
-
-After the package is published:
-
-```bash
-npm install -D vibe-rescue-kit
-npx vibe-rescue scan
-npx vibe-rescue fix --yes
-```
-
-From a clone of this repo:
+## Run it locally
 
 ```bash
 npm ci
 npm run build
 node dist/cli.js scan /path/to/your-app
+node dist/cli.js fix /path/to/your-app --yes
 ```
 
 Node.js 20 or newer.
@@ -258,25 +251,58 @@ ignore:
   - "vendor/**"
 ```
 
-## Git hook and GitHub Action
+## Git hook
 
 ```bash
-vibe-rescue install-hook
-vibe-rescue install-action --mode scan
+node dist/cli.js install-hook
 ```
 
 The hook is `.git/hooks/pre-commit`, or `.husky/pre-commit` when `.husky/` exists. It runs `vibe-rescue fix --yes --hook --staged`.
 
-Use the action from this repository:
+`node dist/cli.js install-action --mode scan` writes `.github/workflows/vibe-rescue.yml` from [`templates/workflow.yml`](templates/workflow.yml).
+
+## Use as a GitHub Action
+
+`action.yml` at the repository root is the action. A workflow checks out the project under test. The action then installs Node.js 20, builds this repository with `npm ci` and `npm run build`, and runs `node dist/cli.js`. It does not install the kit from a package registry.
+
+Publish a `v1.0.0` release and move the `v1` tag to that commit before pinning `@v1`. The same workflow is in [`examples/github-action.yml`](examples/github-action.yml).
 
 ```yaml
-- uses: actions/checkout@v4
-- uses: deepelynxsystems/vibe-rescue-kit@v1
-  with:
-    mode: scan   # or fix
+name: vibe-rescue
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: deepelynxsystems/vibe-rescue-kit@v1
+        with:
+          mode: scan
+          fail-on-findings: true
 ```
 
-`mode: fix` passes `--yes`. The action builds `dist/` when the checkout does not already contain it. Inputs are `mode`, `rule`, and `working-directory`.
+`mode: fix` runs `fix --yes`. A fix that fails verification is rolled back. With `fail-on-findings: true`, the step fails when a problem is still open at the chosen severity. Findings are appended to the job summary. The report file is JSON either way, and secret-shaped strings in it are redacted.
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `path` | `.` | Directory to scan, relative to the workflow workspace. |
+| `rules` | empty | Comma-separated rule ids. Empty runs the built-in rules and any project rules. |
+| `mode` | `scan` | `scan` or `fix`. |
+| `fail-on-findings` | `true` | Fail the step when an open finding meets `severity`, or a rule errors. |
+| `severity` | `warning` | `warning` counts warnings and errors. `error` counts only errors. |
+| `format` | `text` | `text` prints the summary in the log. `json` prints the report JSON. |
+
+| Output | Description |
+| --- | --- |
+| `findings-count` | Open findings at or above `severity`. A verified fix is not counted. |
+| `report-path` | Absolute path of `vibe-rescue-report.json` written in the workspace. |
+| `summary` | One-line result. The same run appends a finding table to the job summary. |
 
 ## Develop
 
@@ -287,7 +313,7 @@ npm run build
 node dist/cli.js rules
 ```
 
-Fixtures under `fixtures/` are intentionally broken projects, one per rule. `examples/broken-spa` combines all seven. Tests copy them to a temp directory, scan, fix, and scan again. `npm test` is the bar for a change.
+Fixtures under `fixtures/` are intentionally broken projects, one per rule. `fixtures/action-clean` and `fixtures/action-dirty` are the GitHub Action checks. `examples/broken-spa` combines all seven. Tests copy them to a temp directory, scan, fix, and scan again. `npm test` is the bar for a change.
 
 Every CLI process prints `vibe-rescue-kit by deepelynx` as it exits.
 
